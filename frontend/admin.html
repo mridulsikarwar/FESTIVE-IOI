@@ -62,8 +62,8 @@
 
       <form id="adminLoginForm" class="space-y-4">
         <div>
-          <input type="password" id="adminPasscode" required placeholder="Admin Passcode (default: admin123)"
-                 class="glass-input w-full px-4 py-3 rounded-xl text-sm text-center tracking-widest placeholder-slate-600">
+          <input type="password" id="adminPasscode" required autocomplete="current-password"
+                 class="glass-input w-full px-4 py-3 rounded-xl text-sm text-center tracking-widest">
         </div>
         <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-semibold text-sm transition shadow-lg shadow-rose-600/30 flex items-center justify-center space-x-2">
           <i class="ph-bold ph-lock-open text-base"></i>
@@ -284,7 +284,7 @@
 
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./js/supabaseClient.js?v=10"></script>
-  <script src="./js/admin.js?v=10"></script>
+  <script src="./js/supabaseClient.js?v=11"></script>
+  <script src="./js/admin.js?v=11"></script>
 </body>
 </html>
