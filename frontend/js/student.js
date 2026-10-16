@@ -1,5 +1,8 @@
 // Student Portal Client Script
 
+// Configurable API base for Vercel deployment (defaults to relative or localStorage)
+const API_BASE = window.API_BASE || localStorage.getItem('api_base') || '';
+
 let appConfig = {
   allowedDomain: 'college.edu',
   googleClientId: '',
@@ -28,7 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Load config from server
 async function loadConfig() {
   try {
-    const res = await fetch('/api/config');
+    const res = await fetch(`${API_BASE}/api/config`);
     appConfig = await res.json();
 
     document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = appConfig.allowedDomain);
@@ -75,7 +78,7 @@ function initGoogleSignIn() {
 // Handle real Google token response
 async function handleGoogleCredentialResponse(response) {
   try {
-    const res = await fetch('/api/auth/google', {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken: response.credential })
@@ -107,7 +110,7 @@ async function handleInstantAuth(e) {
   }
 
   try {
-    const res = await fetch('/api/auth/google', {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ demoUser: { name, email } })
@@ -162,7 +165,7 @@ async function fetchStudentProfile() {
   if (!token) return;
 
   try {
-    const res = await fetch('/api/student/me', {
+    const res = await fetch(`${API_BASE}/api/student/me`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
@@ -196,7 +199,7 @@ function showRegistrationForm(email, name) {
 // Populate Departments from API
 async function loadDepartments() {
   try {
-    const res = await fetch('/api/departments');
+    const res = await fetch(`${API_BASE}/api/departments`);
     const data = await res.json();
     const select = document.getElementById('regDepartment');
     if (select && data.departments) {
@@ -234,7 +237,7 @@ async function handleRegistration(e) {
   submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Generating Ticket...</span>';
 
   try {
-    const res = await fetch('/api/student/register', {
+    const res = await fetch(`${API_BASE}/api/student/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

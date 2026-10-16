@@ -1,5 +1,7 @@
 // Admin Portal Client Script
 
+const API_BASE = window.API_BASE || localStorage.getItem('api_base') || '';
+
 let adminJwt = localStorage.getItem('admin_jwt') || '';
 let html5QrScanner = null;
 let isScannerRunning = false;
@@ -122,7 +124,7 @@ async function handleAdminLogin(e) {
   const password = document.getElementById('adminPasscode').value;
 
   try {
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch(`${API_BASE}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
@@ -256,7 +258,7 @@ function onQrCodeError(errorMessage) {
 // Verify Ticket with Server (Enforces: Once scanned, cannot be scanned again!)
 async function verifyAndMarkTicket(qrData) {
   try {
-    const res = await fetch('/api/admin/scan-ticket', {
+    const res = await fetch(`${API_BASE}/api/admin/scan-ticket`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -397,7 +399,7 @@ function addRecentScan(student, status, timestamp) {
 // Load Stats
 async function loadStats() {
   try {
-    const res = await fetch('/api/admin/stats', {
+    const res = await fetch(`${API_BASE}/api/admin/stats`, {
       headers: { 'Authorization': `Bearer ${adminJwt}` }
     });
     if (!res.ok) return;
@@ -415,7 +417,7 @@ async function loadStats() {
 // Load Departments for Filter
 async function loadDepartmentsFilter() {
   try {
-    const res = await fetch('/api/departments');
+    const res = await fetch(`${API_BASE}/api/departments`);
     const data = await res.json();
     if (data.departments) {
       filterDept.innerHTML = '<option value="ALL">All Departments</option>';
@@ -434,7 +436,7 @@ async function loadDepartmentsFilter() {
 // Load Datasheet from Server
 async function loadDatasheet() {
   try {
-    const res = await fetch('/api/admin/datasheet', {
+    const res = await fetch(`${API_BASE}/api/admin/datasheet`, {
       headers: { 'Authorization': `Bearer ${adminJwt}` }
     });
     if (!res.ok) return;
@@ -577,7 +579,7 @@ function setupEventListeners() {
     exportCsvBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       try {
-        const res = await fetch('/api/admin/export-csv', {
+        const res = await fetch(`${API_BASE}/api/admin/export-csv`, {
           headers: { 'Authorization': `Bearer ${adminJwt}` }
         });
         if (!res.ok) {
