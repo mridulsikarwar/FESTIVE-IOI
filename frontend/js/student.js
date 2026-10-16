@@ -80,67 +80,30 @@ async function loadDepartments() {
   }
 }
 
-// Sign in with Google (OAuth flow)
-async function signInWithGoogle() {
+// Calculate direct Supabase Authorize URL
+function getGoogleAuthUrl() {
+  const redirectUrl = window.location.origin + window.location.pathname;
+  return `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+}
+
+// Sign in with Google (Direct Navigation OAuth flow)
+function signInWithGoogle(e) {
+  if (e) e.preventDefault();
+
+  if (window.location.protocol === 'file:') {
+    showAlert("Google OAuth cannot run from a local file:// address. Open http://localhost:8080 or your live Vercel URL.", "error");
+    return;
+  }
+
+  const authUrl = getGoogleAuthUrl();
+  console.log("Redirecting directly to Supabase Google Authorize URL:", authUrl);
+
   const btn = document.getElementById('googleSignInBtn');
-  const originalHtml = btn ? btn.innerHTML : '';
-  const errBox = document.getElementById('googleAuthError');
-  if (errBox) errBox.classList.add('hidden');
-
   if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Connecting to Google...</span>`;
+    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Redirecting to Google...</span>`;
   }
 
-  try {
-    if (window.location.protocol === 'file:') {
-      throw new Error("Google OAuth cannot run from a local file:// address. Please launch the local server with ./run.sh and open http://localhost:8080 in your browser, or open your deployed URL.");
-    }
-
-    if (!supabase) {
-      throw new Error("Supabase client is not loaded. Please refresh the page.");
-    }
-
-    const redirectUrl = window.location.origin + window.location.pathname;
-    console.log("Initiating Google OAuth redirect to:", redirectUrl);
-
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'select_account'
-        }
-      }
-    });
-
-    if (error) throw error;
-
-    if (data && data.url) {
-      console.log("Redirecting directly to Google URL:", data.url);
-      window.location.assign(data.url);
-      return;
-    }
-  } catch (err) {
-    console.error("Google OAuth error:", err);
-    let errMsg = err.message || String(err);
-    if (errMsg.toLowerCase().includes("provider is not enabled") || errMsg.toLowerCase().includes("unsupported provider")) {
-      errMsg = "⚠️ Google Provider is NOT enabled in your Supabase Dashboard! Go to Supabase Dashboard > Authentication > Providers > Google, toggle it ON, and paste your Google Client ID & Secret.";
-    }
-    showAlert(errMsg, 'error');
-    if (errBox) {
-      errBox.textContent = errMsg;
-      errBox.classList.remove('hidden');
-    }
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = originalHtml;
-    }
-    // Expand testing bypass for convenience
-    const details = document.getElementById('manualTestingDetails');
-    if (details) details.open = true;
-  }
+  window.location.href = authUrl;
 }
 
 // Handle Authenticated User (from Supabase OAuth or Google Identity Services)
@@ -549,6 +512,7 @@ function showAlert(message, type = 'info') {
 // Setup Event Listeners
 function setupEventListeners() {
   if (googleSignInBtn) {
+    googleSignInBtn.href = getGoogleAuthUrl();
     googleSignInBtn.addEventListener('click', signInWithGoogle);
   }
 

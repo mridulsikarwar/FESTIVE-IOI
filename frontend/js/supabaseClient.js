@@ -7,8 +7,14 @@ const APP_CONFIG = {
   allowedDomains: ["pwioi.com", "pw.live"],
   allowedDomain: "pwioi.com",
   adminPasscode: "admin123",
-  googleClientId: ""
+  googleClientId: "163420756626-dbadvu3ab0mmpps3sk4mtnpjp4c2vh4p.apps.googleusercontent.com"
 };
 
 // Initialize Supabase Client
-const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+}) : null;
