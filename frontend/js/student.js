@@ -90,11 +90,16 @@ async function signInWithGoogle() {
   }
 
   try {
+    if (window.location.protocol === 'file:') {
+      throw new Error("Google OAuth cannot run from a local file:// address. Please launch the local server with ./run.sh and open http://localhost:8080 in your browser, or open your deployed URL.");
+    }
+
     if (!supabase) {
-      throw new Error("Supabase client is not loaded.");
+      throw new Error("Supabase client is not loaded. Please refresh the page.");
     }
 
     const redirectUrl = window.location.origin + window.location.pathname;
+    console.log("Initiating Google OAuth redirect to:", redirectUrl);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -110,12 +115,16 @@ async function signInWithGoogle() {
     if (error) throw error;
   } catch (err) {
     console.error("Google OAuth error:", err);
-    showAlert(`Google Sign-In: ${err.message || err}`, 'error');
+    let errMsg = err.message || String(err);
+    if (errMsg.toLowerCase().includes("provider is not enabled") || errMsg.toLowerCase().includes("unsupported provider")) {
+      errMsg = "Google Provider is not enabled in your Supabase Dashboard! Go to Supabase > Authentication > Providers > Google, turn it ON, and paste your Client ID & Secret.";
+    }
+    showAlert(errMsg, 'error');
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = originalHtml;
     }
-    // If Supabase Google provider is not yet enabled, expand testing bypass
+    // Expand testing bypass for convenience
     const details = document.getElementById('manualTestingDetails');
     if (details) details.open = true;
   }
