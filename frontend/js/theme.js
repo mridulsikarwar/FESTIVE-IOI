@@ -12,7 +12,7 @@
     // Update all theme toggle icons & attributes on page
     const icons = document.querySelectorAll('.themeToggleIcon');
     icons.forEach(icon => {
-      icon.className = theme === 'light' ? 'ph ph-moon text-sm' : 'ph ph-sun text-sm';
+      icon.className = 'themeToggleIcon ph ' + (theme === 'light' ? 'ph-moon' : 'ph-sun') + ' text-sm';
     });
 
     const btns = document.querySelectorAll('.themeToggleBtn');

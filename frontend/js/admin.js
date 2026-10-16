@@ -164,14 +164,16 @@ function showDashboard() {
 }
 
 function switchTab(tab) {
+  const activeClass = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
+  const inactiveClass = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200';
   if (tab === 'scanner') {
-    tabScannerBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-zinc-800 text-white shadow-sm';
-    tabDataSheetBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-400 hover:text-zinc-200';
+    tabScannerBtn.className = activeClass;
+    tabDataSheetBtn.className = inactiveClass;
     scannerView.classList.remove('hidden');
     datasheetView.classList.add('hidden');
   } else {
-    tabDataSheetBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-zinc-800 text-white shadow-sm';
-    tabScannerBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-400 hover:text-zinc-200';
+    tabDataSheetBtn.className = activeClass;
+    tabScannerBtn.className = inactiveClass;
     scannerView.classList.add('hidden');
     datasheetView.classList.remove('hidden');
     loadDatasheet();
