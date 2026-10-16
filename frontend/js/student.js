@@ -1,9 +1,9 @@
-// Student Portal Client Script (Direct Supabase Integration)
+// Student Portal Client Script (Direct Supabase Integration & Google OAuth)
 
 let appConfig = {
-  allowedDomain: APP_CONFIG.allowedDomain,
-  googleClientId: '',
-  isGoogleConfigured: false
+  allowedDomain: APP_CONFIG.allowedDomain || 'college.edu',
+  googleClientId: APP_CONFIG.googleClientId || '',
+  isGoogleConfigured: Boolean(APP_CONFIG.googleClientId)
 };
 
 let currentStudent = null;
@@ -16,13 +16,15 @@ const alertBox = document.getElementById('alertBox');
 const userHeaderProfile = document.getElementById('userHeaderProfile');
 const headerUserName = document.getElementById('headerUserName');
 const signOutBtn = document.getElementById('signOutBtn');
+const googleSignInBtn = document.getElementById('googleSignInBtn');
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
   setupDomainDisplay();
   await loadDepartments();
   setupEventListeners();
-  checkExistingSession();
+  await initAuth();
+  initGoogleGis();
 });
 
 // Setup allowed domain labels
@@ -62,25 +64,88 @@ async function loadDepartments() {
   }
 }
 
-// Handle Student Sign-In with Domain Enforcement
-async function handleInstantAuth(e) {
-  e.preventDefault();
-  const name = document.getElementById('demoName').value.trim();
-  const email = document.getElementById('demoEmail').value.trim().toLowerCase();
+// Sign in with Google (OAuth flow)
+async function signInWithGoogle() {
+  const btn = document.getElementById('googleSignInBtn');
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Connecting to Google...</span>`;
+  }
+
+  try {
+    if (!supabase) {
+      throw new Error("Supabase client is not loaded.");
+    }
+
+    const redirectUrl = window.location.origin + window.location.pathname;
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'select_account'
+        }
+      }
+    });
+
+    if (error) throw error;
+  } catch (err) {
+    console.error("Google OAuth error:", err);
+    showAlert(`Google Sign-In: ${err.message || err}`, 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+    // If Supabase Google provider is not yet enabled, expand testing bypass
+    const details = document.getElementById('manualTestingDetails');
+    if (details) details.open = true;
+  }
+}
+
+// Handle Authenticated User (from Supabase OAuth or Google Identity Services)
+async function handleAuthenticatedUser(user) {
+  const email = (user.email || '').toLowerCase().trim();
+  const metadata = user.user_metadata || {};
+  const name = metadata.full_name || metadata.name || user.displayName || (email.split('@')[0]);
+
+  if (!email) {
+    showAlert('Could not retrieve email from Google authentication.', 'error');
+    return;
+  }
 
   // 1. Strict Domain Restriction Check
   const userDomain = email.split('@')[1];
   if (appConfig.allowedDomain && appConfig.allowedDomain !== '*' && userDomain !== appConfig.allowedDomain) {
-    showAlert(`Access Denied: Only accounts ending in @${appConfig.allowedDomain} are permitted.`, 'error');
+    showAlert(`Access Denied: Only accounts ending in @${appConfig.allowedDomain} are permitted. (Signed in as: ${email})`, 'error');
+    if (supabase) {
+      try { await supabase.auth.signOut(); } catch (e) {}
+    }
+    localStorage.removeItem('student_email');
+    localStorage.removeItem('student_name');
+    updateHeaderUser(null);
+    showSection('auth');
     return;
   }
 
-  // 2. Save session locally
+  // 2. Persist locally
   localStorage.setItem('student_email', email);
   localStorage.setItem('student_name', name);
   updateHeaderUser(name);
 
+  // Clean URL hash if present from OAuth redirect
+  if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('id_token') || window.location.hash.includes('error'))) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
   // 3. Check if student already exists in Supabase
+  await loadStudentProfile(email, name);
+}
+
+// Query Supabase for student record
+async function loadStudentProfile(email, name) {
   try {
     const { data: student, error } = await supabase
       .from('students')
@@ -107,6 +172,36 @@ async function handleInstantAuth(e) {
   }
 }
 
+// Initialize Auth listeners & session checks
+async function initAuth() {
+  if (supabase) {
+    // 1. Listen for auth changes (e.g. returning from Google OAuth redirect)
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && session.user) {
+        await handleAuthenticatedUser(session.user);
+      } else if (event === 'SIGNED_OUT') {
+        currentStudent = null;
+        updateHeaderUser(null);
+        showSection('auth');
+      }
+    });
+
+    // 2. Check active Supabase session
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (!error && session && session.user) {
+        await handleAuthenticatedUser(session.user);
+        return;
+      }
+    } catch (e) {
+      console.warn('Error reading Supabase session:', e);
+    }
+  }
+
+  // 3. Fallback to cached student session in localStorage
+  await checkExistingSession();
+}
+
 // Check existing session on page load
 async function checkExistingSession() {
   const savedEmail = localStorage.getItem('student_email');
@@ -118,27 +213,57 @@ async function checkExistingSession() {
   }
 
   updateHeaderUser(savedName || 'Student');
+  await loadStudentProfile(savedEmail, savedName || '');
+}
 
+// Helper: Decode JWT from GIS
+function decodeJwt(token) {
   try {
-    const { data: student, error } = await supabase
-      .from('students')
-      .select('*, attendance(*)')
-      .eq('email', savedEmail)
-      .maybeSingle();
-
-    if (!error && student) {
-      currentStudent = {
-        ...student,
-        attendance_status: student.attendance ? 'Present' : 'Pending',
-        scanned_at: student.attendance ? student.attendance.scanned_at : null
-      };
-      await renderTicket(currentStudent);
-      showSection('ticket');
-    } else {
-      showRegistrationForm(savedEmail, savedName || '');
-    }
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
   } catch (e) {
-    showSection('auth');
+    return null;
+  }
+}
+
+// Optional Google Identity Services (GIS) One Tap / Button
+function initGoogleGis() {
+  if (window.google && appConfig.googleClientId) {
+    try {
+      google.accounts.id.initialize({
+        client_id: appConfig.googleClientId,
+        callback: async (response) => {
+          if (response.credential) {
+            const payload = decodeJwt(response.credential);
+            if (payload && payload.email) {
+              await handleAuthenticatedUser({
+                email: payload.email,
+                user_metadata: {
+                  full_name: payload.name || payload.given_name,
+                  picture: payload.picture
+                }
+              });
+            }
+          }
+        }
+      });
+
+      const wrapper = document.getElementById('googleBtnWrapper');
+      if (wrapper) {
+        google.accounts.id.renderButton(wrapper, {
+          theme: 'outline',
+          size: 'large',
+          width: 320,
+          text: 'continue_with'
+        });
+      }
+    } catch (e) {
+      console.warn('Google Identity Services init notice:', e);
+    }
   }
 }
 
@@ -322,13 +447,42 @@ function updateHeaderUser(name) {
 }
 
 // Sign out
-function handleSignOut() {
+async function handleSignOut() {
+  try {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+  } catch (e) {
+    console.warn('Sign out error:', e);
+  }
   localStorage.removeItem('student_email');
   localStorage.removeItem('student_name');
   currentStudent = null;
   updateHeaderUser(null);
   showSection('auth');
   showAlert('You have been signed out successfully.', 'info');
+}
+
+// Manual Test Auth
+async function handleInstantAuth(e) {
+  e.preventDefault();
+  const name = document.getElementById('demoName').value.trim();
+  const email = document.getElementById('demoEmail').value.trim().toLowerCase();
+
+  // 1. Strict Domain Restriction Check
+  const userDomain = email.split('@')[1];
+  if (appConfig.allowedDomain && appConfig.allowedDomain !== '*' && userDomain !== appConfig.allowedDomain) {
+    showAlert(`Access Denied: Only accounts ending in @${appConfig.allowedDomain} are permitted.`, 'error');
+    return;
+  }
+
+  // 2. Save session locally
+  localStorage.setItem('student_email', email);
+  localStorage.setItem('student_name', name);
+  updateHeaderUser(name);
+
+  // 3. Load profile
+  await loadStudentProfile(email, name);
 }
 
 // Alerts helper
@@ -356,6 +510,10 @@ function showAlert(message, type = 'info') {
 
 // Setup Event Listeners
 function setupEventListeners() {
+  if (googleSignInBtn) {
+    googleSignInBtn.addEventListener('click', signInWithGoogle);
+  }
+
   const instantAuthForm = document.getElementById('instantAuthForm');
   if (instantAuthForm) instantAuthForm.addEventListener('submit', handleInstantAuth);
 
