@@ -497,17 +497,21 @@ async function loadDatasheet() {
 
     if (error) throw error;
 
-    datasheetData = (data || []).map(s => ({
-      enrollment_id: s.enrollment_id,
-      name: s.name,
-      department: s.department,
-      year: s.year,
-      phone: s.phone,
-      email: s.email,
-      registered_at: s.registered_at,
-      attendance_status: s.attendance ? 'Present' : 'Not Scanned',
-      scanned_at: s.attendance ? s.attendance.scanned_at : null
-    }));
+    datasheetData = (data || []).map(s => {
+      const isScanned = Array.isArray(s.attendance) ? s.attendance.length > 0 : !!s.attendance;
+      const attRecord = Array.isArray(s.attendance) ? s.attendance[0] : s.attendance;
+      return {
+        enrollment_id: s.enrollment_id,
+        name: s.name,
+        department: s.department,
+        year: s.year,
+        phone: s.phone,
+        email: s.email,
+        registered_at: s.registered_at,
+        attendance_status: isScanned ? 'Present' : 'Not Scanned',
+        scanned_at: isScanned && attRecord ? attRecord.scanned_at : null
+      };
+    });
 
     renderDatasheetTable();
   } catch (err) {

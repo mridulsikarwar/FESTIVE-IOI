@@ -220,13 +220,19 @@ async function loadStudentProfile(email, name) {
     if (error) throw error;
 
     if (student) {
+      // In PostgREST, related tables are returned as an array [] (which is truthy in JS!)
+      // Must check length > 0 to determine if ticket was actually scanned at gate
+      const isScanned = Array.isArray(student.attendance) ? student.attendance.length > 0 : !!student.attendance;
+      const scanRecord = Array.isArray(student.attendance) ? student.attendance[0] : student.attendance;
+
       currentStudent = {
         ...student,
-        attendance_status: student.attendance ? 'Present' : 'Pending',
-        scanned_at: student.attendance ? student.attendance.scanned_at : null
+        attendance_status: isScanned ? 'Present' : 'Pending',
+        scanned_at: isScanned && scanRecord ? scanRecord.scanned_at : null
       };
       await renderTicket(currentStudent);
       showSection('ticket');
+      subscribeToAttendanceUpdates(student.enrollment_id);
     } else {
       showRegistrationForm(email, name);
     }
@@ -461,11 +467,13 @@ async function handleRegistration(e) {
 
     currentStudent = {
       ...newStudent,
-      attendance_status: 'Pending'
+      attendance_status: 'Pending',
+      scanned_at: null
     };
 
     await renderTicket(currentStudent);
     showSection('ticket');
+    subscribeToAttendanceUpdates(newStudent.enrollment_id);
     showAlert('🎉 Registration complete! Here is your entry pass.', 'success');
   } catch (err) {
     console.error('Registration error:', err);
@@ -532,11 +540,47 @@ async function renderTicket(student) {
   if (student.attendance_status === 'Present') {
     badge.className = 'mt-3 px-4 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300';
     icon.className = 'ph-bold ph-check-circle text-emerald-600 text-sm';
-    text.textContent = '✅ CHECKED IN (ATTENDANCE VERIFIED)';
+    const scanTimeStr = student.scanned_at ? ` at ${new Date(student.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+    text.textContent = `✅ CHECKED IN (ATTENDANCE VERIFIED${scanTimeStr.toUpperCase()})`;
   } else {
     badge.className = 'mt-3 px-4 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5 bg-amber-100 text-amber-900 border border-amber-300';
     icon.className = 'ph-bold ph-clock text-amber-600 text-sm';
     text.textContent = '🎟️ VALID TICKET (PENDING GATE SCAN)';
+  }
+}
+
+// Real-time listener: As soon as admin scans ticket at the gate, student screen updates instantly!
+let attendanceSubscription = null;
+function subscribeToAttendanceUpdates(enrollmentId) {
+  if (!supabase || !enrollmentId) return;
+  try {
+    if (attendanceSubscription) {
+      supabase.removeChannel(attendanceSubscription);
+      attendanceSubscription = null;
+    }
+
+    attendanceSubscription = supabase
+      .channel(`student-gate-${enrollmentId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'attendance',
+        filter: `enrollment_id=eq.${enrollmentId}`
+      }, (payload) => {
+        console.log('Gate scan event received:', payload);
+        if (currentStudent && currentStudent.enrollment_id === enrollmentId) {
+          currentStudent.attendance_status = 'Present';
+          currentStudent.scanned_at = payload.new ? payload.new.scanned_at : new Date().toISOString();
+          renderTicket(currentStudent);
+          if (window.confetti) {
+            confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+          }
+          showAlert('🎉 Welcome to FESTIVE IOI! Attendance verified at entrance gate.', 'success');
+        }
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('Realtime subscription notice:', e);
   }
 }
 
@@ -566,6 +610,10 @@ function updateHeaderUser(name) {
 // Sign out
 async function handleSignOut() {
   try {
+    if (attendanceSubscription && supabase) {
+      supabase.removeChannel(attendanceSubscription);
+      attendanceSubscription = null;
+    }
     if (supabase) {
       await supabase.auth.signOut();
     }
