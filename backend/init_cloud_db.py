@@ -5,7 +5,10 @@ Usage:
     python init_cloud_db.py
 """
 import sys
-from cloud_db import init_cloud_database, DATABASE_URL
+try:
+    from cloud_db import init_cloud_database, DATABASE_URL
+except ImportError:
+    from backend.cloud_db import init_cloud_database, DATABASE_URL
 
 def main():
     print("="*60)

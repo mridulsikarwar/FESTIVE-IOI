@@ -1,6 +1,10 @@
 from fastapi.testclient import TestClient
-from app import app
-from cloud_db import init_cloud_database
+try:
+    from app import app
+    from cloud_db import init_cloud_database
+except ImportError:
+    from backend.app import app
+    from backend.cloud_db import init_cloud_database
 import json
 
 init_cloud_database()
@@ -21,9 +25,13 @@ def test_full_cloud_workflow():
     assert res.status_code == 403
     print("2. Domain Enforcement OK -> Blocked non-college email (Status 403)")
 
+    import time
+    test_id = f"TEST{int(time.time()) % 1000000}"
+    test_email = f"user.{int(time.time())}@college.edu"
+
     # 3. Allow valid institutional domain
     res = client.post("/api/auth/google", json={
-        "demoUser": {"name": "Aarav Gupta", "email": "aarav.gupta@college.edu"}
+        "demoUser": {"name": "Aarav Gupta", "email": test_email}
     })
     assert res.status_code == 200
     student_token = res.json()["token"]
@@ -34,11 +42,11 @@ def test_full_cloud_workflow():
         "/api/student/register",
         headers={"Authorization": f"Bearer {student_token}"},
         json={
-            "enrollment_id": "0801CS231011",
+            "enrollment_id": test_id,
             "name": "Aarav Gupta",
             "department": "Computer Science and Engineering",
             "year": 2,
-            "phone": "9811223344"
+            "phone": f"98{int(time.time()) % 100000000:08d}"
         }
     )
     assert res.status_code == 200
@@ -59,7 +67,7 @@ def test_full_cloud_workflow():
     print("6. Admin Login OK -> Admin staff authenticated")
 
     # 7. First Ticket Scan (Should Succeed and Mark Present)
-    qr_payload = json.dumps({"ticket_token": ticket_token, "enrollment_id": "0801CS231011"})
+    qr_payload = json.dumps({"ticket_token": ticket_token, "enrollment_id": test_id})
     res = client.post(
         "/api/admin/scan-ticket",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -83,7 +91,7 @@ def test_full_cloud_workflow():
     res = client.get("/api/admin/datasheet", headers={"Authorization": f"Bearer {admin_token}"})
     assert res.status_code == 200
     rows = res.json()["data"]
-    attendee = next((r for r in rows if r["enrollment_id"] == "0801CS231011"), None)
+    attendee = next((r for r in rows if r["enrollment_id"] == test_id), None)
     assert attendee is not None
     assert attendee["attendance_status"] == "Present"
     print(f"9. Live Datasheet OK -> Attendee {attendee['name']} is '{attendee['attendance_status']}' at {attendee['scanned_at']}")

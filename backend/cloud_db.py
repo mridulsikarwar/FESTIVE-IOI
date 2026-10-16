@@ -3,9 +3,17 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
-from models import Base, Department
+from pathlib import Path
 
-load_dotenv()
+# Load .env from project root or backend folder
+ROOT_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+try:
+    from models import Base, Department
+except ImportError:
+    from backend.models import Base, Department
 
 # Get Cloud Database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()

@@ -19,10 +19,21 @@ import qrcode
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from cloud_db import get_db, init_cloud_database, DATABASE_URL
-from models import Department, Student, Attendance
+from pathlib import Path
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+FRONTEND_DIR = ROOT_DIR / "frontend"
+
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(BASE_DIR / ".env")
+
+try:
+    from cloud_db import get_db, init_cloud_database, DATABASE_URL
+    from models import Department, Student, Attendance
+except ImportError:
+    from backend.cloud_db import get_db, init_cloud_database, DATABASE_URL
+    from backend.models import Department, Student, Attendance
 
 # App Configuration
 PORT = int(os.getenv("PORT", 8000))
@@ -409,16 +420,16 @@ def export_csv(admin: dict = Depends(verify_admin_token), db: Session = Depends(
     )
 
 # Static files & Frontend Serving
-app.mount("/css", StaticFiles(directory="public/css"), name="css")
-app.mount("/js", StaticFiles(directory="public/js"), name="js")
+app.mount("/css", StaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
+app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
 
 @app.get("/")
 def serve_student_ui():
-    return FileResponse("public/index.html")
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 @app.get("/admin")
 def serve_admin_ui():
-    return FileResponse("public/admin.html")
+    return FileResponse(str(FRONTEND_DIR / "admin.html"))
 
 if __name__ == "__main__":
     import uvicorn
