@@ -34,11 +34,11 @@ const signOutBtn = document.getElementById('signOutBtn');
 const googleSignInBtn = document.getElementById('googleSignInBtn');
 
 // Initialize application
-document.addEventListener('DOMContentLoaded', async () => {
-  setupDomainDisplay();
-  await loadDepartments();
+document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-  await initAuth();
+  setupDomainDisplay();
+  loadDepartments();
+  initAuth();
   initGoogleGis();
 });
 
@@ -84,6 +84,9 @@ async function loadDepartments() {
 async function signInWithGoogle() {
   const btn = document.getElementById('googleSignInBtn');
   const originalHtml = btn ? btn.innerHTML : '';
+  const errBox = document.getElementById('googleAuthError');
+  if (errBox) errBox.classList.add('hidden');
+
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Connecting to Google...</span>`;
@@ -113,13 +116,23 @@ async function signInWithGoogle() {
     });
 
     if (error) throw error;
+
+    if (data && data.url) {
+      console.log("Redirecting directly to Google URL:", data.url);
+      window.location.assign(data.url);
+      return;
+    }
   } catch (err) {
     console.error("Google OAuth error:", err);
     let errMsg = err.message || String(err);
     if (errMsg.toLowerCase().includes("provider is not enabled") || errMsg.toLowerCase().includes("unsupported provider")) {
-      errMsg = "Google Provider is not enabled in your Supabase Dashboard! Go to Supabase > Authentication > Providers > Google, turn it ON, and paste your Client ID & Secret.";
+      errMsg = "⚠️ Google Provider is NOT enabled in your Supabase Dashboard! Go to Supabase Dashboard > Authentication > Providers > Google, toggle it ON, and paste your Google Client ID & Secret.";
     }
     showAlert(errMsg, 'error');
+    if (errBox) {
+      errBox.textContent = errMsg;
+      errBox.classList.remove('hidden');
+    }
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = originalHtml;
