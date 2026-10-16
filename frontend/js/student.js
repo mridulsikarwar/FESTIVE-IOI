@@ -140,7 +140,23 @@ async function handleAuthenticatedUser(user) {
   // 1. Strict Domain Restriction Check
   if (!isDomainAllowed(email)) {
     const label = getAllowedDomainsLabel();
-    showAlert(`Access Denied: Only accounts ending in ${label} are permitted. (Signed in as: ${email})`, 'error');
+    const errMsg = `Access Denied: Only accounts ending in ${label} are permitted.`;
+    console.warn(errMsg, "Signed in as:", email);
+    showAlert(`${errMsg} (Signed in as: ${email})`, 'error');
+
+    const errBox = document.getElementById('googleAuthError');
+    if (errBox) {
+      errBox.innerHTML = `
+        <div class="space-y-1">
+          <p class="font-bold text-rose-300">❌ Access Denied: Unauthorized Domain</p>
+          <p>Only accounts ending in <strong>${label}</strong> are permitted.</p>
+          <p class="text-[11px] text-slate-300">You signed in with: <code class="text-rose-200 bg-rose-900/50 px-1 py-0.5 rounded">${email}</code></p>
+          <p class="text-[11px] text-slate-400 mt-1">Please sign out from Google or choose your @pwioi.com / @pw.live account.</p>
+        </div>
+      `;
+      errBox.classList.remove('hidden');
+    }
+
     if (supabase) {
       try { await supabase.auth.signOut(); } catch (e) {}
     }
@@ -156,9 +172,12 @@ async function handleAuthenticatedUser(user) {
   localStorage.setItem('student_name', name);
   updateHeaderUser(name);
 
-  // Clean URL hash if present from OAuth redirect
+  // Clean URL hash or query if present from OAuth redirect
   if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('id_token') || window.location.hash.includes('error'))) {
-    history.replaceState(null, '', window.location.pathname + window.location.search);
+    history.replaceState(null, '', window.location.pathname);
+  }
+  if (window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error='))) {
+    history.replaceState(null, '', window.location.pathname);
   }
 
   // 3. Check if student already exists in Supabase
@@ -196,9 +215,53 @@ async function loadStudentProfile(email, name) {
 // Initialize Auth listeners & session checks
 async function initAuth() {
   if (supabase) {
-    // 1. Listen for auth changes (e.g. returning from Google OAuth redirect)
+    // 1. Check if URL search has ?code= (PKCE flow return)
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      console.log("Detected OAuth code in URL. Exchanging for session...");
+      try {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) throw error;
+        if (data && data.user) {
+          console.log("PKCE code exchanged successfully for user:", data.user.email);
+          await handleAuthenticatedUser(data.user);
+          return;
+        }
+      } catch (err) {
+        console.warn("exchangeCodeForSession error:", err);
+      }
+    }
+
+    // 2. Check if URL hash has #access_token= (Implicit flow return)
+    const hash = window.location.hash || '';
+    if (hash && hash.includes('access_token=')) {
+      console.log("Detected access token in URL hash. Setting session...");
+      try {
+        const hashParams = new URLSearchParams(hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        if (accessToken) {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || ''
+          });
+          if (error) throw error;
+          if (data && data.user) {
+            console.log("Session restored from URL hash for user:", data.user.email);
+            await handleAuthenticatedUser(data.user);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("setSession error:", err);
+      }
+    }
+
+    // 3. Listen for auth changes
     supabase.auth.onAuthStateChange(async (event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && session.user) {
+      console.log("Auth State Changed:", event, session?.user?.email);
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session && session.user) {
         await handleAuthenticatedUser(session.user);
       } else if (event === 'SIGNED_OUT') {
         currentStudent = null;
@@ -207,10 +270,11 @@ async function initAuth() {
       }
     });
 
-    // 2. Check active Supabase session
+    // 4. Check active Supabase session
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (!error && session && session.user) {
+        console.log("Active Supabase session detected:", session.user.email);
         await handleAuthenticatedUser(session.user);
         return;
       }
@@ -219,7 +283,7 @@ async function initAuth() {
     }
   }
 
-  // 3. Fallback to cached student session in localStorage
+  // 5. Fallback to cached student session in localStorage
   await checkExistingSession();
 }
 
