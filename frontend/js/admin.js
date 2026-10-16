@@ -36,10 +36,16 @@ const datasheetBody = document.getElementById('datasheetBody');
 const recordCount = document.getElementById('recordCount');
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+function initAdmin() {
   setupEventListeners();
   checkAdminSession();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAdmin);
+} else {
+  initAdmin();
+}
 
 // Audio Feedback System using Web Audio API
 function initAudio() {

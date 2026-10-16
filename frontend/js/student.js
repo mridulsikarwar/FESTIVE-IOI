@@ -53,14 +53,21 @@ function checkUrlAuthErrors() {
 }
 
 // Initialize application
-document.addEventListener('DOMContentLoaded', () => {
+function initApp() {
+  console.log("FESTIVE-IOI initializing... readyState:", document.readyState, "URL hash:", window.location.hash ? "present" : "none");
   checkUrlAuthErrors();
   setupEventListeners();
   setupDomainDisplay();
   loadDepartments();
   initAuth();
   initGoogleGis();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
 // Setup allowed domain labels
 function setupDomainDisplay() {
