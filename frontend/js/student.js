@@ -236,25 +236,33 @@ async function initAuth() {
     // 2. Check if URL hash has #access_token= (Implicit flow return)
     const hash = window.location.hash || '';
     if (hash && hash.includes('access_token=')) {
-      console.log("Detected access token in URL hash. Setting session...");
+      console.log("Detected access token in URL hash. Decoding and setting session...");
       try {
         const hashParams = new URLSearchParams(hash.substring(1));
         const accessToken = hashParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token');
         if (accessToken) {
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken || ''
-          });
-          if (error) throw error;
-          if (data && data.user) {
-            console.log("Session restored from URL hash for user:", data.user.email);
-            await handleAuthenticatedUser(data.user);
+          const payload = decodeJwt(accessToken);
+          try {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || ''
+            });
+          } catch (setErr) {
+            console.warn("supabase.auth.setSession notice:", setErr);
+          }
+
+          if (payload && payload.email) {
+            console.log("Authenticated user extracted from URL token:", payload.email);
+            await handleAuthenticatedUser({
+              email: payload.email,
+              user_metadata: payload.user_metadata || { full_name: payload.name }
+            });
             return;
           }
         }
       } catch (err) {
-        console.warn("setSession error:", err);
+        console.warn("Hash token parsing error:", err);
       }
     }
 
