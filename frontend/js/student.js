@@ -1,10 +1,7 @@
-// Student Portal Client Script
-
-// Configurable API base for Vercel deployment (defaults to relative or localStorage)
-const API_BASE = window.API_BASE || localStorage.getItem('api_base') || '';
+// Student Portal Client Script (Direct Supabase Integration)
 
 let appConfig = {
-  allowedDomain: 'college.edu',
+  allowedDomain: APP_CONFIG.allowedDomain,
   googleClientId: '',
   isGoogleConfigured: false
 };
@@ -22,170 +19,126 @@ const signOutBtn = document.getElementById('signOutBtn');
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadConfig();
+  setupDomainDisplay();
   await loadDepartments();
   setupEventListeners();
   checkExistingSession();
 });
 
-// Load config from server
-async function loadConfig() {
+// Setup allowed domain labels
+function setupDomainDisplay() {
+  document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = appConfig.allowedDomain);
+  const domainText = document.getElementById('domainText');
+  if (domainText) domainText.textContent = '@' + appConfig.allowedDomain;
+
+  const demoEmailInput = document.getElementById('demoEmail');
+  if (demoEmailInput && (!demoEmailInput.value || demoEmailInput.value.includes('@'))) {
+    demoEmailInput.value = 'student@' + appConfig.allowedDomain;
+  }
+}
+
+// Populate Departments directly from Supabase
+async function loadDepartments() {
   try {
-    const res = await fetch(`${API_BASE}/api/config`);
-    appConfig = await res.json();
+    const { data: departments, error } = await supabase
+      .from('departments')
+      .select('name, code')
+      .order('name', { ascending: true });
 
-    document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = appConfig.allowedDomain);
-    const domainText = document.getElementById('domainText');
-    if (domainText) domainText.textContent = '@' + appConfig.allowedDomain;
+    if (error) throw error;
 
-    const demoEmailInput = document.getElementById('demoEmail');
-    if (demoEmailInput && (!demoEmailInput.value || demoEmailInput.value.includes('@'))) {
-      demoEmailInput.value = 'student@' + appConfig.allowedDomain;
-    }
-
-    if (appConfig.isGoogleConfigured && window.google) {
-      initGoogleSignIn();
+    const select = document.getElementById('regDepartment');
+    if (select && departments) {
+      select.innerHTML = '<option value="">-- Select Department --</option>';
+      departments.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = `${d.name} (${d.code})`;
+        select.appendChild(opt);
+      });
     }
   } catch (err) {
-    console.error('Failed to load server config:', err);
+    console.error('Failed to load departments from Supabase:', err);
   }
 }
 
-// Initialize Google Identity Services
-function initGoogleSignIn() {
-  try {
-    google.accounts.id.initialize({
-      client_id: appConfig.googleClientId,
-      callback: handleGoogleCredentialResponse,
-      auto_select: false
-    });
-
-    google.accounts.id.renderButton(
-      document.getElementById('googleBtnWrapper'),
-      {
-        theme: 'filled_blue',
-        size: 'large',
-        shape: 'pill',
-        text: 'signin_with',
-        width: 280
-      }
-    );
-  } catch (e) {
-    console.warn('Google GSI initialization notice:', e);
-  }
-}
-
-// Handle real Google token response
-async function handleGoogleCredentialResponse(response) {
-  try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: response.credential })
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      showAlert(data.error || 'Google Sign-In failed', 'error');
-      return;
-    }
-
-    onLoginSuccess(data);
-  } catch (err) {
-    showAlert('Network error during Google Sign-In', 'error');
-  }
-}
-
-// Handle Instant / College Email Sign-In
+// Handle Student Sign-In with Domain Enforcement
 async function handleInstantAuth(e) {
   e.preventDefault();
   const name = document.getElementById('demoName').value.trim();
-  const email = document.getElementById('demoEmail').value.trim();
+  const email = document.getElementById('demoEmail').value.trim().toLowerCase();
 
-  // Client-side domain preview validation
+  // 1. Strict Domain Restriction Check
   const userDomain = email.split('@')[1];
   if (appConfig.allowedDomain && appConfig.allowedDomain !== '*' && userDomain !== appConfig.allowedDomain) {
     showAlert(`Access Denied: Only accounts ending in @${appConfig.allowedDomain} are permitted.`, 'error');
     return;
   }
 
+  // 2. Save session locally
+  localStorage.setItem('student_email', email);
+  localStorage.setItem('student_name', name);
+  updateHeaderUser(name);
+
+  // 3. Check if student already exists in Supabase
   try {
-    const res = await fetch(`${API_BASE}/api/auth/google`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ demoUser: { name, email } })
-    });
-    const data = await res.json();
+    const { data: student, error } = await supabase
+      .from('students')
+      .select('*, attendance(*)')
+      .eq('email', email)
+      .maybeSingle();
 
-    if (!res.ok) {
-      showAlert(data.error || 'Login failed', 'error');
-      return;
+    if (error) throw error;
+
+    if (student) {
+      currentStudent = {
+        ...student,
+        attendance_status: student.attendance ? 'Present' : 'Pending',
+        scanned_at: student.attendance ? student.attendance.scanned_at : null
+      };
+      await renderTicket(currentStudent);
+      showSection('ticket');
+    } else {
+      showRegistrationForm(email, name);
     }
-
-    onLoginSuccess(data);
   } catch (err) {
-    showAlert('Server connection error during sign in', 'error');
+    console.error('Supabase query error:', err);
+    showRegistrationForm(email, name);
   }
 }
 
-// On successful login
-function onLoginSuccess(authData) {
-  localStorage.setItem('student_jwt', authData.token);
-  localStorage.setItem('student_email', authData.email);
-  localStorage.setItem('student_name', authData.name);
-
-  updateHeaderUser(authData.name);
-
-  if (authData.isRegistered) {
-    // Already registered, fetch ticket
-    fetchStudentProfile();
-  } else {
-    // Not registered, show registration form
-    showRegistrationForm(authData.email, authData.name);
-  }
-}
-
-// Check if user already has an active session
+// Check existing session on page load
 async function checkExistingSession() {
-  const token = localStorage.getItem('student_jwt');
-  if (!token) {
+  const savedEmail = localStorage.getItem('student_email');
+  const savedName = localStorage.getItem('student_name');
+
+  if (!savedEmail) {
     showSection('auth');
     return;
   }
 
-  const savedName = localStorage.getItem('student_name');
-  if (savedName) updateHeaderUser(savedName);
-
-  await fetchStudentProfile();
-}
-
-// Fetch student profile & ticket
-async function fetchStudentProfile() {
-  const token = localStorage.getItem('student_jwt');
-  if (!token) return;
+  updateHeaderUser(savedName || 'Student');
 
   try {
-    const res = await fetch(`${API_BASE}/api/student/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
+    const { data: student, error } = await supabase
+      .from('students')
+      .select('*, attendance(*)')
+      .eq('email', savedEmail)
+      .maybeSingle();
 
-    if (res.status === 401 || res.status === 403) {
-      handleSignOut();
-      return;
-    }
-
-    if (data.registered && data.student) {
-      currentStudent = data.student;
-      renderTicket(data.student, data.qrCodeUrl);
+    if (!error && student) {
+      currentStudent = {
+        ...student,
+        attendance_status: student.attendance ? 'Present' : 'Pending',
+        scanned_at: student.attendance ? student.attendance.scanned_at : null
+      };
+      await renderTicket(currentStudent);
       showSection('ticket');
     } else {
-      const email = localStorage.getItem('student_email') || '';
-      const name = localStorage.getItem('student_name') || '';
-      showRegistrationForm(email, name);
+      showRegistrationForm(savedEmail, savedName || '');
     }
-  } catch (err) {
-    console.error('Error fetching profile:', err);
+  } catch (e) {
+    showSection('auth');
   }
 }
 
@@ -196,96 +149,137 @@ function showRegistrationForm(email, name) {
   showSection('reg');
 }
 
-// Populate Departments from API
-async function loadDepartments() {
-  try {
-    const res = await fetch(`${API_BASE}/api/departments`);
-    const data = await res.json();
-    const select = document.getElementById('regDepartment');
-    if (select && data.departments) {
-      select.innerHTML = '<option value="">-- Select Department --</option>';
-      data.departments.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.name;
-        opt.textContent = `${d.name} (${d.code})`;
-        select.appendChild(opt);
-      });
-    }
-  } catch (err) {
-    console.error('Failed to load departments:', err);
-  }
-}
-
-// Submit registration form
+// Handle Student Event Registration in Supabase
 async function handleRegistration(e) {
   e.preventDefault();
-  const token = localStorage.getItem('student_jwt');
-  if (!token) {
-    showAlert('Session expired. Please sign in again.', 'error');
-    showSection('auth');
-    return;
-  }
-
-  const enrollment_id = document.getElementById('regEnrollmentId').value.trim();
+  const email = localStorage.getItem('student_email') || document.getElementById('regEmail').value.trim();
+  const enrollment_id = document.getElementById('regEnrollmentId').value.trim().toUpperCase();
   const name = document.getElementById('regName').value.trim();
   const department = document.getElementById('regDepartment').value;
-  const year = document.getElementById('regYear').value;
+  const year = parseInt(document.getElementById('regYear').value, 10);
   const phone = document.getElementById('regPhone').value.trim();
 
   const submitBtn = document.getElementById('submitRegBtn');
   submitBtn.disabled = true;
-  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Generating Ticket...</span>';
+  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Registering in Cloud DB...</span>';
 
   try {
-    const res = await fetch(`${API_BASE}/api/student/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ enrollment_id, name, department, year, phone })
-    });
+    // 1. Check duplicate enrollment ID (Primary Key)
+    const { data: dupId } = await supabase
+      .from('students')
+      .select('enrollment_id')
+      .eq('enrollment_id', enrollment_id)
+      .maybeSingle();
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      showAlert(data.error || 'Registration failed', 'error');
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = '<i class="ph-bold ph-qr-code text-lg"></i><span>Complete Registration & Generate Ticket</span>';
+    if (dupId) {
+      showAlert(`Enrollment ID '${enrollment_id}' is already registered!`, 'error');
+      resetSubmitBtn(submitBtn);
       return;
     }
 
-    // Trigger celebratory confetti!
-    if (window.confetti) {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+    // 2. Check duplicate phone
+    const { data: dupPhone } = await supabase
+      .from('students')
+      .select('phone')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    if (dupPhone) {
+      showAlert(`Phone number '${phone}' is already registered!`, 'error');
+      resetSubmitBtn(submitBtn);
+      return;
     }
 
-    currentStudent = data.student;
-    renderTicket(data.student, data.qrCodeUrl);
+    // 3. Generate secure ticket token
+    const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const ticketToken = `TKT-${randomHex}`;
+
+    // 4. Insert into Supabase 'students' table
+    const { data: newStudent, error: insertError } = await supabase
+      .from('students')
+      .insert({
+        enrollment_id,
+        name,
+        department,
+        year,
+        phone,
+        email,
+        ticket_token: ticketToken,
+        registered_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
+    // 5. Trigger celebratory confetti!
+    if (window.confetti) {
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    }
+
+    currentStudent = {
+      ...newStudent,
+      attendance_status: 'Pending'
+    };
+
+    await renderTicket(currentStudent);
     showSection('ticket');
     showAlert('🎉 Registration complete! Here is your entry pass.', 'success');
   } catch (err) {
-    showAlert('Network error while registering', 'error');
+    console.error('Registration error:', err);
+    showAlert('Registration error: ' + (err.message || 'Database error'), 'error');
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.innerHTML = '<i class="ph-bold ph-qr-code text-lg"></i><span>Complete Registration & Generate Ticket</span>';
+    resetSubmitBtn(submitBtn);
   }
 }
 
+function resetSubmitBtn(btn) {
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ph-bold ph-qr-code text-lg"></i><span>Complete Registration & Generate Ticket</span>';
+}
+
+// Generate QR Code using client-side QRCode generator
+async function generateQrDataUrl(text) {
+  return new Promise((resolve) => {
+    const tempDiv = document.createElement('div');
+    new QRCode(tempDiv, {
+      text: text,
+      width: 280,
+      height: 280,
+      colorDark: "#1e1b4b",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+
+    setTimeout(() => {
+      const img = tempDiv.querySelector('img');
+      if (img && img.src) {
+        resolve(img.src);
+      } else {
+        const canvas = tempDiv.querySelector('canvas');
+        resolve(canvas ? canvas.toDataURL() : '');
+      }
+    }, 100);
+  });
+}
+
 // Render Ticket Details
-function renderTicket(student, qrCodeUrl) {
+async function renderTicket(student) {
   document.getElementById('tktName').textContent = student.name;
   document.getElementById('tktEnrollment').textContent = student.enrollment_id;
   document.getElementById('tktDeptYear').textContent = `${student.department} (Year ${student.year})`;
   document.getElementById('tktPhone').textContent = student.phone;
   document.getElementById('tktTokenDisplay').textContent = student.ticket_token;
 
-  if (qrCodeUrl) {
-    document.getElementById('tktQrImage').src = qrCodeUrl;
+  // Generate QR payload
+  const qrPayload = JSON.stringify({
+    ticket_token: student.ticket_token,
+    enrollment_id: student.enrollment_id
+  });
+
+  const qrDataUrl = await generateQrDataUrl(qrPayload);
+  if (qrDataUrl) {
+    document.getElementById('tktQrImage').src = qrDataUrl;
   }
 
   // Update status badge
@@ -329,7 +323,6 @@ function updateHeaderUser(name) {
 
 // Sign out
 function handleSignOut() {
-  localStorage.removeItem('student_jwt');
   localStorage.removeItem('student_email');
   localStorage.removeItem('student_name');
   currentStudent = null;
@@ -381,8 +374,8 @@ function setupEventListeners() {
   const refreshBtn = document.getElementById('refreshTicketStatusBtn');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
-      await fetchStudentProfile();
-      showAlert('Ticket status refreshed.', 'info');
+      await checkExistingSession();
+      showAlert('Ticket status refreshed from Supabase.', 'info');
     });
   }
 }

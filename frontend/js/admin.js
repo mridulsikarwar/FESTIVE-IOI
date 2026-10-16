@@ -1,8 +1,6 @@
-// Admin Portal Client Script
+// Admin Portal Client Script (Direct Supabase Integration)
 
-const API_BASE = window.API_BASE || localStorage.getItem('api_base') || '';
-
-let adminJwt = localStorage.getItem('admin_jwt') || '';
+let isAdminLoggedIn = localStorage.getItem('admin_logged_in') === 'true';
 let html5QrScanner = null;
 let isScannerRunning = false;
 let datasheetData = [];
@@ -56,11 +54,10 @@ function playSuccessChime() {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
 
-    // First tone (C5)
     const osc1 = audioCtx.createOscillator();
     const gain1 = audioCtx.createGain();
     osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(523.25, now);
+    osc1.frequency.setValueAtTime(523.25, now); // C5
     gain1.gain.setValueAtTime(0.2, now);
     gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
     osc1.connect(gain1);
@@ -68,11 +65,10 @@ function playSuccessChime() {
     osc1.start(now);
     osc1.stop(now + 0.2);
 
-    // Second tone (G5)
     const osc2 = audioCtx.createOscillator();
     const gain2 = audioCtx.createGain();
     osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(783.99, now + 0.15);
+    osc2.frequency.setValueAtTime(783.99, now + 0.15); // G5
     gain2.gain.setValueAtTime(0.25, now + 0.15);
     gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
     osc2.connect(gain2);
@@ -108,11 +104,12 @@ function playErrorBuzzer() {
 
 // Session Check
 async function checkAdminSession() {
-  if (adminJwt) {
+  if (isAdminLoggedIn) {
     showDashboard();
     await loadDepartmentsFilter();
     await loadStats();
     await loadDatasheet();
+    setupRealtimeSubscription();
   } else {
     showLogin();
   }
@@ -123,35 +120,24 @@ async function handleAdminLogin(e) {
   e.preventDefault();
   const password = document.getElementById('adminPasscode').value;
 
-  try {
-    const res = await fetch(`${API_BASE}/api/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      showAdminAlert(data.error || 'Authentication failed', 'error');
-      return;
-    }
-
-    adminJwt = data.token;
-    localStorage.setItem('admin_jwt', adminJwt);
+  if (password === APP_CONFIG.adminPasscode) {
+    isAdminLoggedIn = true;
+    localStorage.setItem('admin_logged_in', 'true');
     showAdminAlert('Authenticated successfully! Welcome, Staff.', 'success');
     showDashboard();
     await loadDepartmentsFilter();
     await loadStats();
     await loadDatasheet();
-  } catch (err) {
-    showAdminAlert('Error communicating with server', 'error');
+    setupRealtimeSubscription();
+  } else {
+    showAdminAlert('Invalid admin passcode.', 'error');
   }
 }
 
 function handleAdminLogout() {
   stopCamera();
-  localStorage.removeItem('admin_jwt');
-  adminJwt = '';
+  localStorage.removeItem('admin_logged_in');
+  isAdminLoggedIn = false;
   showLogin();
   showAdminAlert('Logged out of Admin Gate.', 'info');
 }
@@ -212,7 +198,7 @@ async function startCamera() {
       { facingMode: "environment" },
       config,
       onQrCodeSuccess,
-      onQrCodeError
+      () => {}
     );
 
     isScannerRunning = true;
@@ -237,7 +223,7 @@ async function stopCamera() {
   }
 }
 
-// Throttle scan triggers so same QR isn't submitted 10 times in 1 second
+// Throttle scan triggers
 let isProcessingScan = false;
 async function onQrCodeSuccess(decodedText) {
   if (isProcessingScan) return;
@@ -245,53 +231,95 @@ async function onQrCodeSuccess(decodedText) {
 
   await verifyAndMarkTicket(decodedText);
 
-  // Resume scanning after 2.5 seconds pause
   setTimeout(() => {
     isProcessingScan = false;
   }, 2500);
 }
 
-function onQrCodeError(errorMessage) {
-  // Silent frame miss
-}
-
-// Verify Ticket with Server (Enforces: Once scanned, cannot be scanned again!)
+// Verify Ticket with Supabase (CRITICAL: Once scanned, CANNOT be scanned again!)
 async function verifyAndMarkTicket(qrData) {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/scan-ticket`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${adminJwt}`
-      },
-      body: JSON.stringify({ qrData })
-    });
+    let ticketToken = null;
+    let enrollmentId = null;
 
-    const result = await res.json();
+    if (typeof qrData === 'string') {
+      try {
+        const parsed = JSON.parse(qrData);
+        ticketToken = parsed.ticket_token;
+        enrollmentId = parsed.enrollment_id;
+      } catch (e) {
+        const clean = qrData.trim();
+        if (clean.startsWith('TKT-')) {
+          ticketToken = clean;
+        } else {
+          enrollmentId = clean.toUpperCase();
+        }
+      }
+    }
 
-    if (res.status === 401 || res.status === 403) {
-      showAdminAlert('Session expired. Please log in again.', 'error');
-      handleAdminLogout();
+    // 1. Find Student in Supabase
+    let query = supabase.from('students').select('*');
+    if (ticketToken && enrollmentId) {
+      query = query.or(`ticket_token.eq.${ticketToken},enrollment_id.eq.${enrollmentId}`);
+    } else if (ticketToken) {
+      query = query.eq('ticket_token', ticketToken);
+    } else if (enrollmentId) {
+      query = query.eq('enrollment_id', enrollmentId);
+    }
+
+    const { data: student, error: studentError } = await query.maybeSingle();
+
+    if (studentError || !student) {
+      playErrorBuzzer();
+      renderScanResult('invalid', { message: 'Ticket not found in cloud database.' });
       return;
     }
 
-    if (result.success) {
-      // 1. FRESH SCAN VERIFIED!
-      playSuccessChime();
-      renderScanResult('success', result);
-      addRecentScan(result.student, 'VERIFIED', result.scannedAt);
-      loadStats();
-      loadDatasheet();
-    } else if (result.alreadyScanned) {
-      // 2. CRUCIAL: TICKET ALREADY USED - REJECT!
+    // 2. CHECK IF TICKET HAS ALREADY BEEN SCANNED
+    const { data: existingScan } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('enrollment_id', student.enrollment_id)
+      .maybeSingle();
+
+    if (existingScan) {
+      // DUPLICATE SCAN REJECTED!
       playErrorBuzzer();
-      renderScanResult('already_scanned', result);
-      addRecentScan(result.student, 'DUPLICATE REJECTED', result.scannedAt);
-    } else {
-      // 3. INVALID TICKET
-      playErrorBuzzer();
-      renderScanResult('invalid', result);
+      renderScanResult('already_scanned', {
+        student,
+        scannedAt: existingScan.scanned_at
+      });
+      addRecentScan(student, 'DUPLICATE REJECTED', existingScan.scanned_at);
+      return;
     }
+
+    // 3. RECORD FRESH ATTENDANCE IN SUPABASE
+    const scanTime = new Date().toISOString();
+    const { error: insertError } = await supabase
+      .from('attendance')
+      .insert({
+        enrollment_id: student.enrollment_id,
+        status: 'Present',
+        scanned_at: scanTime,
+        scanned_by: 'Admin Scanner'
+      });
+
+    if (insertError) {
+      // If constraint violation caught at db level
+      playErrorBuzzer();
+      renderScanResult('already_scanned', { student, scannedAt: scanTime });
+      return;
+    }
+
+    // 4. ENTRY APPROVED!
+    playSuccessChime();
+    renderScanResult('success', {
+      student,
+      scannedAt: scanTime
+    });
+    addRecentScan(student, 'VERIFIED', scanTime);
+    await loadStats();
+    await loadDatasheet();
   } catch (err) {
     playErrorBuzzer();
     renderScanResult('error', { message: 'Network communication failure during verification' });
@@ -361,7 +389,7 @@ function renderScanResult(type, data) {
       <span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500 text-slate-950 uppercase tracking-wider inline-block mb-2">
         INVALID TICKET
       </span>
-      <p class="text-sm text-slate-200 font-semibold mt-1">${data.message || 'Ticket not found in database.'}</p>
+      <p class="text-sm text-slate-200 font-semibold mt-1">${data.message || 'Ticket not found in cloud database.'}</p>
       <p class="text-xs text-slate-400 mt-2">Please ensure the student has completed registration on the portal.</p>
     `;
   }
@@ -396,32 +424,33 @@ function addRecentScan(student, status, timestamp) {
   `).join('');
 }
 
-// Load Stats
+// Load Stats from Supabase
 async function loadStats() {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/stats`, {
-      headers: { 'Authorization': `Bearer ${adminJwt}` }
-    });
-    if (!res.ok) return;
-    const stats = await res.json();
+    const { count: total } = await supabase.from('students').select('*', { count: 'exact', head: true });
+    const { count: present } = await supabase.from('attendance').select('*', { count: 'exact', head: true });
 
-    document.getElementById('statTotal').textContent = stats.total;
-    document.getElementById('statPresent').textContent = stats.present;
-    document.getElementById('statPending').textContent = stats.pending;
-    document.getElementById('statRate').textContent = stats.percent + '%';
+    const totalCount = total || 0;
+    const presentCount = present || 0;
+    const pendingCount = Math.max(0, totalCount - presentCount);
+    const rate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
+
+    document.getElementById('statTotal').textContent = totalCount;
+    document.getElementById('statPresent').textContent = presentCount;
+    document.getElementById('statPending').textContent = pendingCount;
+    document.getElementById('statRate').textContent = rate + '%';
   } catch (e) {
     console.error('Stats load error:', e);
   }
 }
 
-// Load Departments for Filter
+// Load Departments for Filter from Supabase
 async function loadDepartmentsFilter() {
   try {
-    const res = await fetch(`${API_BASE}/api/departments`);
-    const data = await res.json();
-    if (data.departments) {
+    const { data: departments } = await supabase.from('departments').select('name').order('name');
+    if (departments) {
       filterDept.innerHTML = '<option value="ALL">All Departments</option>';
-      data.departments.forEach(d => {
+      departments.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.name;
         opt.textContent = d.name;
@@ -433,19 +462,46 @@ async function loadDepartmentsFilter() {
   }
 }
 
-// Load Datasheet from Server
+// Load Datasheet from Supabase
 async function loadDatasheet() {
   try {
-    const res = await fetch(`${API_BASE}/api/admin/datasheet`, {
-      headers: { 'Authorization': `Bearer ${adminJwt}` }
-    });
-    if (!res.ok) return;
+    const { data, error } = await supabase
+      .from('students')
+      .select('*, attendance(*)')
+      .order('registered_at', { ascending: false });
 
-    const json = await res.json();
-    datasheetData = json.data || [];
+    if (error) throw error;
+
+    datasheetData = (data || []).map(s => ({
+      enrollment_id: s.enrollment_id,
+      name: s.name,
+      department: s.department,
+      year: s.year,
+      phone: s.phone,
+      email: s.email,
+      registered_at: s.registered_at,
+      attendance_status: s.attendance ? 'Present' : 'Not Scanned',
+      scanned_at: s.attendance ? s.attendance.scanned_at : null
+    }));
+
     renderDatasheetTable();
   } catch (err) {
     console.error('Datasheet load error:', err);
+  }
+}
+
+// Setup Realtime Updates from Supabase
+function setupRealtimeSubscription() {
+  try {
+    supabase
+      .channel('attendance-gate-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
+        loadStats();
+        loadDatasheet();
+      })
+      .subscribe();
+  } catch (e) {
+    console.warn('Realtime subscription notice:', e);
   }
 }
 
@@ -457,7 +513,6 @@ function renderDatasheetTable() {
   const yearFilter = filterYear.value;
 
   const filtered = datasheetData.filter(row => {
-    // Search query matches enrollment_id, name, department, phone, email
     const matchSearch = !searchTerm ||
       (row.enrollment_id && row.enrollment_id.toLowerCase().includes(searchTerm)) ||
       (row.name && row.name.toLowerCase().includes(searchTerm)) ||
@@ -465,13 +520,8 @@ function renderDatasheetTable() {
       (row.phone && row.phone.includes(searchTerm)) ||
       (row.email && row.email.toLowerCase().includes(searchTerm));
 
-    // Status filter
     const matchStatus = (statusFilter === 'ALL') || (row.attendance_status === statusFilter);
-
-    // Department filter
     const matchDept = (deptFilter === 'ALL') || (row.department === deptFilter);
-
-    // Year filter
     const matchYear = (yearFilter === 'ALL') || (String(row.year) === yearFilter);
 
     return matchSearch && matchStatus && matchDept && matchYear;
@@ -565,7 +615,7 @@ function setupEventListeners() {
     refreshDataBtn.addEventListener('click', async () => {
       await loadStats();
       await loadDatasheet();
-      showAdminAlert('Datasheet refreshed.', 'info');
+      showAdminAlert('Datasheet refreshed from Supabase.', 'info');
     });
   }
 
@@ -574,30 +624,40 @@ function setupEventListeners() {
   if (filterDept) filterDept.addEventListener('change', renderDatasheetTable);
   if (filterYear) filterYear.addEventListener('change', renderDatasheetTable);
 
-  // Authenticated CSV Export
+  // Client-side CSV Export
   if (exportCsvBtn) {
-    exportCsvBtn.addEventListener('click', async (e) => {
+    exportCsvBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/export-csv`, {
-          headers: { 'Authorization': `Bearer ${adminJwt}` }
-        });
-        if (!res.ok) {
-          showAdminAlert('CSV export unauthorized', 'error');
-          return;
-        }
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `festive_attendance_${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-      } catch (err) {
-        showAdminAlert('Failed to download CSV', 'error');
+      if (!datasheetData || datasheetData.length === 0) {
+        showAdminAlert('No records to export', 'error');
+        return;
       }
+
+      let csv = 'Enrollment ID,Name,Department,Year,Phone,Email,Registration Date,Attendance Status,Scanned Timestamp\n';
+      datasheetData.forEach(r => {
+        const escape = (val) => `"${String(val || '').replace(/"/g, '""')}"`;
+        csv += [
+          escape(r.enrollment_id),
+          escape(r.name),
+          escape(r.department),
+          escape(r.year),
+          escape(r.phone),
+          escape(r.email),
+          escape(r.registered_at),
+          escape(r.attendance_status),
+          escape(r.scanned_at || 'N/A')
+        ].join(',') + '\n';
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `supabase_attendance_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
     });
   }
 }
