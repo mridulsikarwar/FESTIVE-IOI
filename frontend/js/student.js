@@ -33,8 +33,28 @@ const headerUserName = document.getElementById('headerUserName');
 const signOutBtn = document.getElementById('signOutBtn');
 const googleSignInBtn = document.getElementById('googleSignInBtn');
 
+// Check for OAuth errors in URL returned by provider
+function checkUrlAuthErrors() {
+  const hash = window.location.hash || '';
+  const search = window.location.search || '';
+  const params = new URLSearchParams(search.substring(1));
+  const hashParams = new URLSearchParams(hash.substring(1));
+
+  const errorDesc = params.get('error_description') || hashParams.get('error_description') || params.get('error') || hashParams.get('error');
+  if (errorDesc) {
+    const msg = decodeURIComponent(errorDesc).replace(/\+/g, ' ');
+    showAlert(`Authentication notice: ${msg}`, 'error');
+    const errBox = document.getElementById('googleAuthError');
+    if (errBox) {
+      errBox.textContent = `Google Auth Notice: ${msg}`;
+      errBox.classList.remove('hidden');
+    }
+  }
+}
+
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
+  checkUrlAuthErrors();
   setupEventListeners();
   setupDomainDisplay();
   loadDepartments();
