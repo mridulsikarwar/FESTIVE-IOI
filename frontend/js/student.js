@@ -82,7 +82,7 @@ async function loadDepartments() {
   const fallbackDepartments = [
     { name: "School of Technology", code: "SOT" },
     { name: "School of Management", code: "SOM" },
-    { name: "School of Humanities", code: "SOH" }
+    { name: "School of Healthcare", code: "SOH" }
   ];
 
   try {

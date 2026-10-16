@@ -75,7 +75,7 @@ def init_cloud_database():
             default_departments = [
                 ("School of Technology", "SOT"),
                 ("School of Management", "SOM"),
-                ("School of Humanities", "SOH")
+                ("School of Healthcare", "SOH")
             ]
             for name, code in default_departments:
                 dept = Department(name=name, code=code)

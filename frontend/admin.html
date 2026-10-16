@@ -6,38 +6,65 @@
   <title>Admin Portal | FESTIVE IOI Ticket Scanner & Data Sheet</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind = {
+      darkMode: 'class'
+    };
+  </script>
+  <!-- Immediate Theme Initializer (prevents FOUC) -->
+  <script>
+    (function() {
+      try {
+        var saved = localStorage.getItem('festive_theme');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = saved || (prefersDark ? 'dark' : 'dark');
+        if (theme === 'light') {
+          document.documentElement.classList.add('light');
+          document.documentElement.classList.remove('dark');
+        } else {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
+        }
+      } catch(e) {}
+    })();
+  </script>
   <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- HTML5-QRCode Scanner Library -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=13">
+  <link rel="stylesheet" href="./css/styles.css?v=14">
 </head>
-<body class="flex flex-col min-h-screen bg-[#09090b] text-zinc-100">
+<body class="flex flex-col min-h-screen">
 
   <!-- Header -->
-  <header class="border-b border-zinc-800/80 bg-[#09090b]/90 backdrop-blur-sm sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-200">
-          <i class="ph-bold ph-shield-check text-base"></i>
+  <header class="app-header sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-white">
+          <i class="ph-bold ph-shield-check text-sm"></i>
         </div>
         <div>
           <div class="flex items-center space-x-2">
-            <h1 class="font-semibold text-sm text-zinc-100 leading-tight">Admin Gate Control</h1>
-            <span class="text-[10px] font-mono text-zinc-400 bg-zinc-800/80 border border-zinc-700/60 px-1.5 py-0.5 rounded">STAFF</span>
+            <h1 class="font-semibold text-sm text-zinc-900 dark:text-zinc-100 leading-tight">Admin Gate Control</h1>
+            <span class="text-[10px] font-mono text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 px-1.5 py-0.5 rounded">STAFF</span>
           </div>
-          <p class="text-[11px] text-zinc-400">FESTIVE IOI 2026 Ticket Verification & Attendance</p>
+          <p class="text-[11px] text-zinc-500 dark:text-zinc-400">FESTIVE IOI 2026 Ticket Verification & Attendance</p>
         </div>
       </div>
 
-      <div class="flex items-center space-x-2.5">
-        <a href="/" class="flex items-center space-x-1.5 text-xs text-zinc-400 hover:text-zinc-200 px-2.5 py-1.5 rounded-md border border-zinc-800 hover:bg-zinc-900 transition">
+      <div class="flex items-center space-x-2">
+        <!-- Theme Toggle Button -->
+        <button type="button" class="themeToggleBtn flex items-center justify-center w-8 h-8 rounded-md theme-toggle-btn transition" title="Toggle theme" aria-label="Toggle theme">
+          <i class="themeToggleIcon ph ph-sun text-sm"></i>
+        </button>
+
+        <a href="/" class="btn-secondary flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-md transition">
           <i class="ph ph-arrow-left text-xs"></i>
           <span>Student Portal</span>
         </a>
 
-        <div id="adminControls" class="hidden items-center space-x-2 pl-2 border-l border-zinc-800">
-          <button id="adminLogoutBtn" title="Logout" class="flex items-center space-x-1 text-xs text-rose-400 hover:text-rose-300 px-2.5 py-1.5 rounded-md border border-zinc-800 hover:bg-rose-950/30 transition">
+        <div id="adminControls" class="hidden items-center space-x-2 pl-2 border-l border-zinc-200 dark:border-zinc-800">
+          <button id="adminLogoutBtn" title="Logout" class="flex items-center space-x-1 text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition">
             <i class="ph ph-sign-out"></i>
             <span>Exit</span>
           </button>
@@ -54,18 +81,18 @@
 
     <!-- ADMIN LOGIN MODAL / VIEW -->
     <div id="adminLoginSection" class="w-full max-w-sm mx-auto my-auto solid-card rounded-xl p-6 sm:p-7 text-center">
-      <div class="w-10 h-10 mx-auto mb-3.5 rounded-lg bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center text-zinc-300 text-lg">
+      <div class="w-10 h-10 mx-auto mb-3.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-center text-zinc-700 dark:text-zinc-300 text-lg">
         <i class="ph-bold ph-key"></i>
       </div>
-      <h2 class="text-lg font-semibold text-zinc-100 mb-1">Gate Staff Login</h2>
-      <p class="text-zinc-400 text-xs mb-5">Enter secret passcode to access ticket scanner & live datasheet.</p>
+      <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Gate Staff Login</h2>
+      <p class="text-zinc-500 dark:text-zinc-400 text-xs mb-5">Enter secret passcode to access ticket scanner & live datasheet.</p>
 
       <form id="adminLoginForm" class="space-y-3.5">
         <div>
           <input type="password" id="adminPasscode" required autocomplete="current-password"
-                 class="clean-input w-full px-3 py-2.5 rounded-lg text-xs text-center tracking-widest text-zinc-100">
+                 class="clean-input w-full px-3 py-2.5 rounded-lg text-xs text-center tracking-widest">
         </div>
-        <button type="submit" class="w-full py-2.5 px-4 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-medium text-xs transition flex items-center justify-center space-x-2">
+        <button type="submit" class="btn-primary w-full py-2.5 px-4 rounded-lg font-medium text-xs transition flex items-center justify-center space-x-2">
           <span>Authenticate & Open Portal</span>
         </button>
       </form>
@@ -78,64 +105,64 @@
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-400">Total Registered</p>
-            <h3 id="statTotal" class="text-2xl font-semibold text-zinc-100 mt-1">0</h3>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Total Registered</p>
+            <h3 id="statTotal" class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mt-1">0</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-base">
+          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-base">
             <i class="ph ph-users"></i>
           </div>
         </div>
 
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-400">Present (Scanned)</p>
-            <h3 id="statPresent" class="text-2xl font-semibold text-emerald-400 mt-1">0</h3>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Present (Scanned)</p>
+            <h3 id="statPresent" class="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 mt-1">0</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-emerald-950/50 border border-emerald-900/60 flex items-center justify-center text-emerald-400 text-base">
+          <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 text-base">
             <i class="ph ph-check-circle"></i>
           </div>
         </div>
 
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-400">Pending Check-in</p>
-            <h3 id="statPending" class="text-2xl font-semibold text-zinc-300 mt-1">0</h3>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Pending Check-in</p>
+            <h3 id="statPending" class="text-2xl font-semibold text-zinc-700 dark:text-zinc-300 mt-1">0</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-base">
+          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-base">
             <i class="ph ph-clock"></i>
           </div>
         </div>
 
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-400">Check-in Rate</p>
-            <h3 id="statRate" class="text-2xl font-semibold text-zinc-100 mt-1">0%</h3>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Check-in Rate</p>
+            <h3 id="statRate" class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mt-1">0%</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-base">
+          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-base">
             <i class="ph ph-chart-pie-slice"></i>
           </div>
         </div>
       </div>
 
       <!-- TABS NAVIGATION -->
-      <div class="flex items-center justify-between border-b border-zinc-800/80 pb-2">
-        <div class="flex space-x-1.5 p-1 bg-zinc-900 border border-zinc-800 rounded-lg">
-          <button id="tabScannerBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-zinc-800 text-white shadow-sm">
+      <div class="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800/80 pb-2">
+        <div class="flex space-x-1 p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg">
+          <button id="tabScannerBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm">
             <i class="ph ph-camera text-sm"></i>
             <span>Ticket Scanner</span>
           </button>
-          <button id="tabDataSheetBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-400 hover:text-zinc-200">
+          <button id="tabDataSheetBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200">
             <i class="ph ph-table text-sm"></i>
             <span>Data Sheet</span>
           </button>
         </div>
 
         <div class="flex items-center space-x-2">
-          <button id="refreshDataBtn" title="Refresh Data" class="px-3 py-1.5 rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-white text-xs flex items-center space-x-1.5 transition">
+          <button id="refreshDataBtn" title="Refresh Data" class="btn-secondary px-3 py-1.5 rounded-md text-xs flex items-center space-x-1.5 transition">
             <i class="ph ph-arrows-clockwise text-xs"></i>
             <span>Refresh</span>
           </button>
-          <a href="/api/admin/export-csv" id="exportCsvBtn" download="attendance_datasheet.csv" class="px-3 py-1.5 rounded-md bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-medium flex items-center space-x-1.5 transition">
+          <a href="/api/admin/export-csv" id="exportCsvBtn" download="attendance_datasheet.csv" class="btn-secondary px-3 py-1.5 rounded-md text-xs font-medium flex items-center space-x-1.5 transition">
             <i class="ph ph-download-simple text-xs"></i>
             <span>Export CSV</span>
           </a>
@@ -149,11 +176,11 @@
         <div class="lg:col-span-6 space-y-4">
           <div class="solid-card rounded-xl p-5">
             <div class="flex items-center justify-between mb-3">
-              <h3 class="text-xs font-medium text-zinc-300 flex items-center space-x-2">
-                <i class="ph ph-scan text-sm text-zinc-400"></i>
+              <h3 class="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center space-x-2">
+                <i class="ph ph-scan text-sm text-zinc-500 dark:text-zinc-400"></i>
                 <span>QR Camera Scanner</span>
               </h3>
-              <button id="toggleCameraBtn" class="px-2.5 py-1 rounded-md text-xs font-medium bg-white hover:bg-zinc-200 text-zinc-950 transition">
+              <button id="toggleCameraBtn" class="btn-primary px-2.5 py-1 rounded-md text-xs font-medium transition">
                 Start Camera
               </button>
             </div>
@@ -163,14 +190,14 @@
               <span class="p-4 text-center">Click "Start Camera" above to activate camera scanner</span>
             </div>
 
-            <div class="mt-4 pt-4 border-t border-zinc-800/80">
-              <label class="block text-xs font-medium text-zinc-400 mb-1.5">
+            <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/80">
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
                 Manual Entry / Barcode Scanner Input:
               </label>
               <form id="manualScanForm" class="flex space-x-2">
                 <input type="text" id="manualInput" placeholder="Enrollment ID or Ticket Token"
                        class="clean-input flex-1 px-3 py-2 rounded-lg text-xs uppercase font-mono">
-                <button type="submit" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition">
+                <button type="submit" class="btn-secondary px-3 py-2 rounded-lg text-xs font-medium transition">
                   Verify & Mark
                 </button>
               </form>
@@ -183,18 +210,18 @@
           
           <!-- SCAN RESULT NOTICE BOX (SUCCESS / DUPLICATE / ERROR) -->
           <div id="scanResultBox" class="solid-card rounded-xl p-6 min-h-[260px] flex flex-col items-center justify-center text-center transition-all">
-            <div class="w-12 h-12 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-2xl mb-3">
+            <div class="w-12 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-2xl mb-3">
               <i class="ph ph-qr-code"></i>
             </div>
-            <h4 class="text-sm font-medium text-zinc-300">Awaiting Ticket Scan...</h4>
+            <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Awaiting Ticket Scan...</h4>
             <p class="text-xs text-zinc-500 max-w-xs mt-1">Point the camera towards the student's ticket QR code to verify entry.</p>
           </div>
 
           <!-- MINI RECENT SCANS LOG -->
           <div class="solid-card rounded-xl p-4">
-            <h4 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+            <h4 class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
               <span>Recent Gate Scans</span>
-              <span class="text-[10px] text-zinc-500">Live</span>
+              <span class="text-[10px] text-zinc-400 dark:text-zinc-500">Live</span>
             </h4>
             <div id="recentScansList" class="space-y-1.5 text-xs max-h-44 overflow-y-auto">
               <p class="text-zinc-500 text-xs text-center py-4">No tickets scanned in this session yet.</p>
@@ -211,9 +238,9 @@
         <!-- Search and Filters Bar -->
         <div class="solid-card rounded-xl p-3 flex flex-col md:flex-row gap-2.5 items-center justify-between">
           <div class="relative w-full md:w-72">
-            <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-500 text-xs"></i>
+            <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-400 dark:text-zinc-500 text-xs"></i>
             <input type="text" id="tableSearch" placeholder="Search attendee..."
-                   class="clean-input w-full pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-500">
+                   class="clean-input w-full pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-500">
           </div>
 
           <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
@@ -242,7 +269,7 @@
         </div>
 
         <!-- Data Table Container -->
-        <div class="solid-card rounded-xl overflow-hidden border border-zinc-800">
+        <div class="solid-card rounded-xl overflow-hidden">
           <div class="overflow-x-auto max-h-[600px]">
             <table class="w-full text-left text-xs custom-table">
               <thead>
@@ -258,7 +285,7 @@
                   <th class="py-2.5 px-3.5 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody id="datasheetBody" class="divide-y divide-zinc-800/60 text-zinc-300">
+              <tbody id="datasheetBody" class="divide-y divide-zinc-200 dark:divide-zinc-800/60 text-zinc-700 dark:text-zinc-300">
                 <tr>
                   <td colspan="9" class="text-center py-8 text-zinc-500">
                     Loading attendee data from Supabase...
@@ -269,9 +296,9 @@
           </div>
 
           <!-- Table Footer -->
-          <div class="p-3 bg-zinc-950/80 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-400">
-            <span>Showing <span id="recordCount" class="font-medium text-zinc-200">0</span> attendees</span>
-            <span class="text-[11px] text-zinc-500">Updates instantly upon ticket scan</span>
+          <div class="p-3 bg-zinc-50 dark:bg-zinc-950/80 border-t border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+            <span>Showing <span id="recordCount" class="font-medium text-zinc-800 dark:text-zinc-200">0</span> attendees</span>
+            <span class="text-[11px] text-zinc-400 dark:text-zinc-500">Updates instantly upon ticket scan</span>
           </div>
         </div>
 
@@ -282,14 +309,15 @@
   </main>
 
   <!-- Footer -->
-  <footer class="py-5 text-center text-xs text-zinc-500 border-t border-zinc-900 space-y-1">
+  <footer class="py-5 text-center text-xs text-zinc-500 border-t border-zinc-200 dark:border-zinc-900 space-y-1">
     <p>FESTIVE-IOI Admin Gate &copy; 2026. Secure QR Verification Protocol.</p>
-    <p class="text-[11px] text-zinc-400">Made by <span class="text-zinc-300 font-medium">Mridul Sikarwar</span></p>
+    <p class="text-[11px] text-zinc-600 dark:text-zinc-400">Made by <span class="font-medium text-zinc-800 dark:text-zinc-200">Mridul Sikarwar</span></p>
   </footer>
 
-  <!-- Supabase JS -->
+  <!-- Theme & Supabase Scripts -->
+  <script src="./js/theme.js?v=14"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./js/supabaseClient.js?v=13"></script>
-  <script src="./js/admin.js?v=13"></script>
+  <script src="./js/supabaseClient.js?v=14"></script>
+  <script src="./js/admin.js?v=14"></script>
 </body>
 </html>
