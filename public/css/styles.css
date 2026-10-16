@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+
+:root {
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --secondary: #06b6d4;
+  --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #090d16 100%);
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  min-height: 100vh;
+  background: #090d16;
+  color: #f8fafc;
+}
+
+.font-display {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Glassmorphism panels */
+.glass-card {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+}
+
+.glass-input {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+/* Ticket Styling */
+.ticket-container {
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+.ticket-notch-left, .ticket-notch-right {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  background: #090d16;
+  border-radius: 50%;
+  top: 68%;
+  z-index: 10;
+}
+
+.ticket-notch-left {
+  left: -14px;
+}
+
+.ticket-notch-right {
+  right: -14px;
+}
+
+.ticket-dashed-line {
+  position: absolute;
+  top: 68%;
+  left: 20px;
+  right: 20px;
+  border-top: 2px dashed #cbd5e1;
+  margin-top: 13px;
+}
+
+/* Scanner viewport */
+#reader {
+  width: 100% !important;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid rgba(99, 102, 241, 0.3) !important;
+}
+
+#reader video {
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+/* Custom table styling */
+.custom-table th {
+  background: rgba(15, 23, 42, 0.9);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.custom-table tr:hover {
+  background: rgba(51, 65, 85, 0.3);
+}
+
+/* Print styling for ticket */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-ticket, #printable-ticket * {
+    visibility: visible;
+  }
+  #printable-ticket {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+  }
+}
