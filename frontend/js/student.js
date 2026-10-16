@@ -75,11 +75,6 @@ function setupDomainDisplay() {
   document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = label);
   const domainText = document.getElementById('domainText');
   if (domainText) domainText.textContent = label;
-
-  const demoEmailInput = document.getElementById('demoEmail');
-  if (demoEmailInput && (!demoEmailInput.value || demoEmailInput.value.includes('@'))) {
-    demoEmailInput.value = 'student@' + (appConfig.allowedDomains[0] || 'pwioi.com');
-  }
 }
 
 // Populate Departments directly from Supabase
@@ -628,28 +623,6 @@ async function handleSignOut() {
   showAlert('You have been signed out successfully.', 'info');
 }
 
-// Manual Test Auth
-async function handleInstantAuth(e) {
-  e.preventDefault();
-  const name = document.getElementById('demoName').value.trim();
-  const email = document.getElementById('demoEmail').value.trim().toLowerCase();
-
-  // 1. Strict Domain Restriction Check
-  if (!isDomainAllowed(email)) {
-    const label = getAllowedDomainsLabel();
-    showAlert(`Access Denied: Only accounts ending in ${label} are permitted.`, 'error');
-    return;
-  }
-
-  // 2. Save session locally
-  localStorage.setItem('student_email', email);
-  localStorage.setItem('student_name', name);
-  updateHeaderUser(name);
-
-  // 3. Load profile
-  await loadStudentProfile(email, name);
-}
-
 // Alerts helper
 function showAlert(message, type = 'info') {
   alertBox.classList.remove('hidden', 'bg-rose-950/80', 'border-rose-700/60', 'text-rose-200', 'bg-emerald-950/80', 'border-emerald-700/60', 'text-emerald-200', 'bg-indigo-950/80', 'border-indigo-700/60', 'text-indigo-200');
@@ -679,9 +652,6 @@ function setupEventListeners() {
     googleSignInBtn.href = getGoogleAuthUrl();
     googleSignInBtn.addEventListener('click', signInWithGoogle);
   }
-
-  const instantAuthForm = document.getElementById('instantAuthForm');
-  if (instantAuthForm) instantAuthForm.addEventListener('submit', handleInstantAuth);
 
   const regForm = document.getElementById('registrationForm');
   if (regForm) regForm.addEventListener('submit', handleRegistration);
