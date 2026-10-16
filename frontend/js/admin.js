@@ -452,19 +452,38 @@ async function loadStats() {
 
 // Load Departments for Filter from Supabase
 async function loadDepartmentsFilter() {
+  const fallbackDepartments = [
+    { name: "School of Technology", code: "SOT" },
+    { name: "School of Management", code: "SOM" },
+    { name: "School of Humanities", code: "SOH" }
+  ];
+
   try {
-    const { data: departments } = await supabase.from('departments').select('name').order('name');
-    if (departments) {
+    const { data: departments } = await supabase.from('departments').select('name, code').order('name');
+    const list = (departments && departments.length > 0) ? departments : fallbackDepartments;
+
+    if (filterDept) {
       filterDept.innerHTML = '<option value="ALL">All Departments</option>';
-      departments.forEach(d => {
+      list.forEach(d => {
         const opt = document.createElement('option');
-        opt.value = d.name;
-        opt.textContent = d.name;
+        const deptLabel = `${d.name} (${d.code})`;
+        opt.value = deptLabel;
+        opt.textContent = deptLabel;
         filterDept.appendChild(opt);
       });
     }
   } catch (e) {
     console.error('Dept filter load error:', e);
+    if (filterDept) {
+      filterDept.innerHTML = '<option value="ALL">All Departments</option>';
+      fallbackDepartments.forEach(d => {
+        const opt = document.createElement('option');
+        const deptLabel = `${d.name} (${d.code})`;
+        opt.value = deptLabel;
+        opt.textContent = deptLabel;
+        filterDept.appendChild(opt);
+      });
+    }
   }
 }
 
@@ -505,6 +524,10 @@ function setupRealtimeSubscription() {
         loadStats();
         loadDatasheet();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        loadStats();
+        loadDatasheet();
+      })
       .subscribe();
   } catch (e) {
     console.warn('Realtime subscription notice:', e);
@@ -527,7 +550,10 @@ function renderDatasheetTable() {
       (row.email && row.email.toLowerCase().includes(searchTerm));
 
     const matchStatus = (statusFilter === 'ALL') || (row.attendance_status === statusFilter);
-    const matchDept = (deptFilter === 'ALL') || (row.department === deptFilter);
+    const matchDept = (deptFilter === 'ALL') || 
+      (row.department === deptFilter) ||
+      (row.department && deptFilter.includes(row.department)) ||
+      (row.department && row.department.includes(deptFilter));
     const matchYear = (yearFilter === 'ALL') || (String(row.year) === yearFilter);
 
     return matchSearch && matchStatus && matchDept && matchYear;
@@ -538,7 +564,7 @@ function renderDatasheetTable() {
   if (filtered.length === 0) {
     datasheetBody.innerHTML = `
       <tr>
-        <td colspan="8" class="text-center py-8 text-slate-500">
+        <td colspan="9" class="text-center py-8 text-slate-500">
           No records match the active search or filter criteria.
         </td>
       </tr>
@@ -553,7 +579,7 @@ function renderDatasheetTable() {
       : '—';
 
     return `
-      <tr class="transition">
+      <tr class="hover:bg-slate-900/40 transition">
         <td class="py-3 px-4 font-mono font-bold text-indigo-400 whitespace-nowrap">${row.enrollment_id}</td>
         <td class="py-3 px-4 font-semibold text-white whitespace-nowrap">${row.name}</td>
         <td class="py-3 px-4 text-slate-300">${row.department}</td>
@@ -571,10 +597,64 @@ function renderDatasheetTable() {
           </span>
         </td>
         <td class="py-3 px-4 font-mono text-slate-400 whitespace-nowrap text-[11px]">${scanTimeFormatted}</td>
+        <td class="py-3 px-4 text-center whitespace-nowrap">
+          <button onclick="handleDeleteStudent('${row.enrollment_id}', '${encodeURIComponent(row.name)}')"
+                  title="Delete student and ticket"
+                  class="px-2.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-700/50 text-rose-300 hover:text-white text-xs font-medium transition inline-flex items-center space-x-1 active:scale-95">
+            <i class="ph-bold ph-trash text-sm text-rose-400"></i>
+            <span>Delete</span>
+          </button>
+        </td>
       </tr>
     `;
   }).join('');
 }
+
+// Delete Student (Admin Action)
+async function handleDeleteStudent(enrollmentId, encodedName) {
+  const name = decodeURIComponent(encodedName || '');
+  const confirmed = confirm(
+    `⚠️ DELETE ATTENDEE CONFIRMATION\n\n` +
+    `Are you sure you want to delete:\n` +
+    `Name: ${name}\n` +
+    `Enrollment ID: ${enrollmentId}\n\n` +
+    `This will permanently delete their student record, entry ticket, and gate attendance scan from the database.`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    showAdminAlert(`Deleting attendee ${enrollmentId}...`, 'info');
+
+    // 1. Delete associated attendance record first
+    const { error: attError } = await supabase
+      .from('attendance')
+      .delete()
+      .eq('enrollment_id', enrollmentId);
+
+    if (attError) console.warn('Attendance delete note:', attError);
+
+    // 2. Delete student record
+    const { error: studentError } = await supabase
+      .from('students')
+      .delete()
+      .eq('enrollment_id', enrollmentId);
+
+    if (studentError) throw studentError;
+
+    // 3. Update local state
+    datasheetData = datasheetData.filter(s => s.enrollment_id !== enrollmentId);
+    renderDatasheetTable();
+    await loadStats();
+
+    showAdminAlert(`🗑️ Deleted student: ${name} (${enrollmentId})`, 'success');
+  } catch (err) {
+    console.error('Failed to delete student:', err);
+    showAdminAlert(`Delete failed: ${err.message || err}`, 'error');
+  }
+}
+
+window.handleDeleteStudent = handleDeleteStudent;
 
 // Admin Alert helper
 function showAdminAlert(message, type = 'info') {

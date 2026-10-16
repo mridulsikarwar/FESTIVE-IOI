@@ -84,26 +84,43 @@ function setupDomainDisplay() {
 
 // Populate Departments directly from Supabase
 async function loadDepartments() {
+  const fallbackDepartments = [
+    { name: "School of Technology", code: "SOT" },
+    { name: "School of Management", code: "SOM" },
+    { name: "School of Humanities", code: "SOH" }
+  ];
+
   try {
     const { data: departments, error } = await supabase
       .from('departments')
       .select('name, code')
       .order('name', { ascending: true });
 
-    if (error) throw error;
-
+    const list = (departments && departments.length > 0) ? departments : fallbackDepartments;
     const select = document.getElementById('regDepartment');
-    if (select && departments) {
+    if (select) {
       select.innerHTML = '<option value="">-- Select Department --</option>';
-      departments.forEach(d => {
+      list.forEach(d => {
         const opt = document.createElement('option');
-        opt.value = d.name;
-        opt.textContent = `${d.name} (${d.code})`;
+        const label = `${d.name} (${d.code})`;
+        opt.value = label;
+        opt.textContent = label;
         select.appendChild(opt);
       });
     }
   } catch (err) {
     console.error('Failed to load departments from Supabase:', err);
+    const select = document.getElementById('regDepartment');
+    if (select) {
+      select.innerHTML = '<option value="">-- Select Department --</option>';
+      fallbackDepartments.forEach(d => {
+        const opt = document.createElement('option');
+        const label = `${d.name} (${d.code})`;
+        opt.value = label;
+        opt.textContent = label;
+        select.appendChild(opt);
+      });
+    }
   }
 }
 

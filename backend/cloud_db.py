@@ -73,14 +73,9 @@ def init_cloud_database():
         if count == 0:
             print("🌱 Seeding default academic departments into cloud database...")
             default_departments = [
-                ("Computer Science and Engineering", "CSE"),
-                ("Information Technology", "IT"),
-                ("Electronics and Communication", "ECE"),
-                ("Electrical Engineering", "EE"),
-                ("Mechanical Engineering", "ME"),
-                ("Civil Engineering", "CE"),
-                ("Biotechnology", "BT"),
-                ("Management / MBA", "MGMT")
+                ("School of Technology", "SOT"),
+                ("School of Management", "SOM"),
+                ("School of Humanities", "SOH")
             ]
             for name, code in default_departments:
                 dept = Department(name=name, code=code)
