@@ -12,38 +12,33 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="./css/styles.css">
+  <link rel="stylesheet" href="./css/styles.css?v=13">
 </head>
-<body class="flex flex-col min-h-screen">
+<body class="flex flex-col min-h-screen bg-[#09090b] text-zinc-100">
 
   <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-950/60 backdrop-blur-md sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+  <header class="border-b border-zinc-800/80 bg-[#09090b]/90 backdrop-blur-sm sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-          <i class="ph-bold ph-ticket text-xl text-white"></i>
+        <div class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-200">
+          <i class="ph-bold ph-ticket text-base"></i>
         </div>
         <div>
-          <h1 class="font-display font-bold text-lg text-white leading-tight">FESTIVE IOI</h1>
-          <p class="text-xs text-indigo-400 font-medium">Annual Tech & Cultural Summit 2026</p>
+          <h1 class="font-semibold text-sm text-zinc-100 leading-tight">FESTIVE IOI</h1>
+          <p class="text-[11px] text-zinc-400">Annual Summit 2026</p>
         </div>
       </div>
 
-      <div class="flex items-center space-x-3">
-        <div id="domainBadge" class="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/50 text-indigo-300 text-xs">
-          <i class="ph ph-shield-check text-sm text-cyan-400"></i>
-          <span>Only: <strong id="domainText" class="text-white">@pwioi.com or @pw.live</strong></span>
-        </div>
-        
-        <a href="/admin" class="flex items-center space-x-1.5 text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-500 transition">
-          <i class="ph ph-scan text-sm"></i>
-          <span>Admin Portal</span>
+      <div class="flex items-center space-x-2.5">
+        <a href="/admin" class="flex items-center space-x-1.5 text-xs text-zinc-400 hover:text-zinc-200 px-2.5 py-1.5 rounded-md border border-zinc-800 hover:bg-zinc-900 transition">
+          <i class="ph ph-shield text-xs"></i>
+          <span>Admin</span>
         </a>
 
-        <div id="userHeaderProfile" class="hidden items-center space-x-2 pl-2 border-l border-slate-800">
-          <span id="headerUserName" class="text-xs font-semibold text-slate-200"></span>
-          <button id="signOutBtn" title="Sign Out" class="text-slate-400 hover:text-rose-400 transition p-1">
-            <i class="ph ph-sign-out text-base"></i>
+        <div id="userHeaderProfile" class="hidden items-center space-x-2 pl-2 border-l border-zinc-800">
+          <span id="headerUserName" class="text-xs font-medium text-zinc-300"></span>
+          <button id="signOutBtn" title="Sign Out" class="text-zinc-500 hover:text-zinc-300 transition p-1">
+            <i class="ph ph-sign-out text-sm"></i>
           </button>
         </div>
       </div>
@@ -51,213 +46,194 @@
   </header>
 
   <!-- Notification Banner -->
-  <div id="alertBox" class="hidden max-w-xl mx-auto mt-4 px-4 py-3 rounded-xl text-sm flex items-start space-x-3 transition-all"></div>
+  <div id="alertBox" class="hidden max-w-lg mx-auto mt-4 px-4 py-3 rounded-lg text-xs flex items-start space-x-2.5 transition-all"></div>
 
   <!-- Main Container -->
   <main class="flex-grow flex items-center justify-center p-4">
 
     <!-- STEP 1: GOOGLE SIGN IN CARD -->
-    <div id="authSection" class="w-full max-w-md glass-card rounded-2xl p-8 text-center animate-fade-in">
-      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-3xl">
-        <i class="ph-duotone ph-student"></i>
+    <div id="authSection" class="w-full max-w-sm solid-card rounded-xl p-6 sm:p-7 text-center">
+      <div class="w-10 h-10 mx-auto mb-3.5 rounded-lg bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center text-zinc-300 text-lg">
+        <i class="ph-bold ph-user"></i>
       </div>
-      <h2 class="font-display text-2xl font-bold text-white mb-2">Student Event Portal</h2>
-      <p class="text-slate-400 text-sm mb-6">
-        Sign in with your official college email account to register and claim your event entry ticket.
+      <h2 class="text-lg font-semibold text-zinc-100 mb-1">Student Portal</h2>
+      <p class="text-zinc-400 text-xs mb-5">
+        Sign in with your institutional Google account to view or claim your event pass.
       </p>
 
-      <div class="mb-6 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-xs text-indigo-300 flex items-center justify-center space-x-2">
-        <i class="ph-fill ph-info text-base text-cyan-400"></i>
-        <span>Domain Restriction: Only <strong><span class="allowedDomainSpan">@pwioi.com or @pw.live</span></strong> allowed</span>
-      </div>
-
       <!-- Google Auth Button (Primary: One Click Sign-In) -->
-      <div class="space-y-4">
+      <div class="space-y-3">
         <a id="googleSignInBtn"
            href="https://nodwynlqtqtmzqjhvnns.supabase.co/auth/v1/authorize?provider=google"
            onclick="this.href='https://nodwynlqtqtmzqjhvnns.supabase.co/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(window.location.origin + window.location.pathname); return true;"
-           class="w-full py-3.5 px-5 rounded-xl bg-white hover:bg-slate-100 active:scale-[0.99] text-slate-800 font-semibold text-sm transition-all shadow-lg shadow-indigo-500/10 flex items-center justify-center space-x-3 border border-slate-200 cursor-pointer text-center select-none">
-          <svg class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+           class="w-full py-2.5 px-4 rounded-lg bg-white hover:bg-zinc-200 active:scale-[0.99] text-zinc-900 font-medium text-xs transition flex items-center justify-center space-x-2.5 border border-zinc-200 select-none">
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
           </svg>
-          <span class="text-slate-800">Sign in with Google</span>
+          <span>Continue with Google</span>
         </a>
 
-        <!-- Google One Tap / GIS Container (rendered if Google Client ID is configured) -->
+        <!-- Google One Tap / GIS Container -->
         <div id="googleBtnWrapper" class="flex justify-center"></div>
 
         <!-- Inline Auth Error Display -->
-        <div id="googleAuthError" class="hidden p-3 rounded-xl bg-rose-950/90 border border-rose-700/60 text-xs text-rose-200 text-left"></div>
+        <div id="googleAuthError" class="hidden p-2.5 rounded-lg bg-rose-950/50 border border-rose-800/60 text-xs text-rose-300 text-left"></div>
 
-        <p class="text-xs text-slate-400">
-          Sign in instantly with your Google account. No manual typing required.
+        <p class="text-[11px] text-zinc-500 pt-1">
+          Authorized domains: <span class="allowedDomainSpan text-zinc-400">@pwioi.com or @pw.live</span>
         </p>
       </div>
 
     </div>
 
     <!-- STEP 2: REGISTRATION FORM -->
-    <div id="regSection" class="hidden w-full max-w-xl glass-card rounded-2xl p-8">
-      <div class="flex items-center justify-between pb-4 mb-6 border-b border-slate-800">
+    <div id="regSection" class="hidden w-full max-w-md solid-card rounded-xl p-6 sm:p-7">
+      <div class="pb-4 mb-5 border-b border-zinc-800 flex items-start justify-between">
         <div>
-          <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 inline-flex items-center space-x-1">
-            <i class="ph-bold ph-check-circle"></i>
-            <span>Google Account Verified</span>
-          </span>
-          <h2 class="font-display text-2xl font-bold text-white mt-2">Event Registration</h2>
-          <p class="text-slate-400 text-xs">Fill in your official academic details to generate your entry QR.</p>
+          <h2 class="text-base font-semibold text-zinc-100">Complete Registration</h2>
+          <p class="text-zinc-400 text-xs mt-0.5">Enter your academic details to generate your pass.</p>
         </div>
+        <span class="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 rounded font-medium">Verified</span>
       </div>
 
-      <form id="registrationForm" class="space-y-4">
+      <form id="registrationForm" class="space-y-3.5">
         <!-- Enrollment ID -->
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
-            <span>Enrollment ID (Primary Key) <span class="text-rose-400">*</span></span>
-            <span class="text-[11px] text-indigo-400">Unique College Roll No</span>
+          <label class="block text-xs font-medium text-zinc-300 mb-1">
+            Enrollment ID <span class="text-rose-400">*</span>
           </label>
-          <div class="relative">
-            <input type="text" id="regEnrollmentId" required placeholder="e.g. 0801CS221045"
-                   class="glass-input w-full px-4 py-2.5 rounded-xl text-sm uppercase font-mono tracking-wider placeholder-slate-600">
-            <i class="ph ph-identification-card absolute right-3.5 top-3 text-slate-400 text-lg"></i>
-          </div>
+          <input type="text" id="regEnrollmentId" required placeholder="e.g. 0801CS221045"
+                 class="clean-input w-full px-3 py-2 rounded-lg text-xs uppercase font-mono tracking-wider placeholder-zinc-600">
         </div>
 
-        <!-- Student Name & Year in 2 columns -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="md:col-span-2">
-            <label class="block text-xs font-medium text-slate-300 mb-1.5">
+        <!-- Student Name & Year -->
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="col-span-2">
+            <label class="block text-xs font-medium text-zinc-300 mb-1">
               Full Name <span class="text-rose-400">*</span>
             </label>
-            <input type="text" id="regName" required placeholder="Your full name"
-                   class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+            <input type="text" id="regName" required placeholder="Full Name"
+                   class="clean-input w-full px-3 py-2 rounded-lg text-xs">
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1.5">
-              Academic Year <span class="text-rose-400">*</span>
+            <label class="block text-xs font-medium text-zinc-300 mb-1">
+              Year <span class="text-rose-400">*</span>
             </label>
-            <select id="regYear" required class="glass-input w-full px-3 py-2.5 rounded-xl text-sm">
-              <option value="1">1st Year</option>
-              <option value="2">2nd Year</option>
-              <option value="3" selected>3rd Year</option>
-              <option value="4">4th Year</option>
-              <option value="5">5th Year</option>
+            <select id="regYear" required class="clean-input w-full px-2 py-2 rounded-lg text-xs">
+              <option value="1">1st</option>
+              <option value="2">2nd</option>
+              <option value="3" selected>3rd</option>
+              <option value="4">4th</option>
+              <option value="5">5th</option>
             </select>
           </div>
         </div>
 
         <!-- Department -->
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1.5">
-            Department / Branch <span class="text-rose-400">*</span>
+          <label class="block text-xs font-medium text-zinc-300 mb-1">
+            Department <span class="text-rose-400">*</span>
           </label>
-          <select id="regDepartment" required class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
-            <option value="">-- Select Department --</option>
+          <select id="regDepartment" required class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+            <option value="">Select department</option>
           </select>
         </div>
 
         <!-- Phone & Readonly Email -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-2 gap-2.5">
           <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1.5">
+            <label class="block text-xs font-medium text-zinc-300 mb-1">
               Phone Number <span class="text-rose-400">*</span>
             </label>
-            <input type="tel" id="regPhone" required placeholder="10-digit mobile number"
-                   class="glass-input w-full px-4 py-2.5 rounded-xl text-sm">
+            <input type="tel" id="regPhone" required placeholder="10-digit number"
+                   class="clean-input w-full px-3 py-2 rounded-lg text-xs">
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1.5">
-              Verified Email (Locked)
+            <label class="block text-xs font-medium text-zinc-300 mb-1">
+              Account Email
             </label>
-            <div class="relative">
-              <input type="email" id="regEmail" readonly
-                     class="w-full px-4 py-2.5 rounded-xl text-sm bg-slate-900 border border-slate-800 text-slate-400 cursor-not-allowed">
-              <i class="ph-bold ph-lock-key absolute right-3.5 top-3 text-slate-500 text-base"></i>
-            </div>
+            <input type="email" id="regEmail" readonly
+                   class="w-full px-3 py-2 rounded-lg text-xs bg-zinc-900 border border-zinc-800 text-zinc-400 cursor-not-allowed">
           </div>
         </div>
 
         <button type="submit" id="submitRegBtn"
-                class="w-full py-3 px-6 mt-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:opacity-90 text-white font-semibold text-sm transition shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2">
-          <i class="ph-bold ph-qr-code text-lg"></i>
-          <span>Complete Registration & Generate Ticket</span>
+                class="w-full py-2.5 px-4 mt-2 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-medium text-xs transition flex items-center justify-center space-x-2">
+          <span>Generate Entry Pass</span>
+          <i class="ph-bold ph-arrow-right text-xs"></i>
         </button>
       </form>
     </div>
 
     <!-- STEP 3: TICKET QR DISPLAY -->
-    <div id="ticketSection" class="hidden w-full max-w-md animate-fade-in">
+    <div id="ticketSection" class="hidden w-full max-w-sm">
       
       <!-- Printable Ticket Area -->
-      <div id="printable-ticket" class="ticket-container p-6 relative">
-        <div class="ticket-notch-left"></div>
-        <div class="ticket-notch-right"></div>
-        <div class="ticket-dashed-line"></div>
+      <div id="printable-ticket" class="ticket-container p-5">
 
         <!-- Ticket Header -->
-        <div class="flex items-start justify-between pb-4 border-b border-slate-100">
+        <div class="flex items-start justify-between pb-3 border-b border-zinc-200">
           <div>
-            <span class="text-[10px] uppercase font-bold tracking-widest text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-md">
-              Official Entry Pass
+            <span class="text-[10px] uppercase font-bold tracking-wider text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+              Entry Pass
             </span>
-            <h3 class="font-display font-black text-xl text-slate-900 mt-1">FESTIVE IOI 2026</h3>
-            <p class="text-xs text-slate-500">Venue: Main Auditorium | Date: Oct 2026</p>
+            <h3 class="font-bold text-base text-zinc-900 mt-1">FESTIVE IOI 2026</h3>
+            <p class="text-[11px] text-zinc-500">Main Auditorium &bull; October 2026</p>
           </div>
-          <div class="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center text-white text-2xl shadow-md">
+          <div class="w-8 h-8 rounded-lg bg-zinc-900 flex items-center justify-center text-white text-base">
             <i class="ph-bold ph-ticket"></i>
           </div>
         </div>
 
         <!-- Student Details Grid -->
-        <div class="py-4 grid grid-cols-2 gap-3 text-left">
+        <div class="py-3.5 grid grid-cols-2 gap-2.5 text-left border-b border-zinc-100">
           <div>
-            <p class="text-[10px] text-slate-400 uppercase font-semibold">Attendee Name</p>
-            <p id="tktName" class="text-sm font-bold text-slate-800 truncate"></p>
+            <p class="text-[10px] text-zinc-400 uppercase font-medium">Attendee</p>
+            <p id="tktName" class="text-xs font-semibold text-zinc-900 truncate"></p>
           </div>
           <div>
-            <p class="text-[10px] text-slate-400 uppercase font-semibold">Enrollment ID</p>
-            <p id="tktEnrollment" class="text-sm font-mono font-bold text-indigo-700"></p>
+            <p class="text-[10px] text-zinc-400 uppercase font-medium">Enrollment ID</p>
+            <p id="tktEnrollment" class="text-xs font-mono font-semibold text-zinc-900"></p>
           </div>
           <div>
-            <p class="text-[10px] text-slate-400 uppercase font-semibold">Department & Year</p>
-            <p id="tktDeptYear" class="text-xs font-semibold text-slate-700 truncate"></p>
+            <p class="text-[10px] text-zinc-400 uppercase font-medium">Department</p>
+            <p id="tktDeptYear" class="text-xs text-zinc-700 truncate"></p>
           </div>
           <div>
-            <p class="text-[10px] text-slate-400 uppercase font-semibold">Phone</p>
-            <p id="tktPhone" class="text-xs font-semibold text-slate-700"></p>
+            <p class="text-[10px] text-zinc-400 uppercase font-medium">Contact</p>
+            <p id="tktPhone" class="text-xs text-zinc-700"></p>
           </div>
         </div>
 
         <!-- QR Code Area -->
-        <div class="pt-6 pb-2 text-center flex flex-col items-center">
-          <div class="p-3 bg-white rounded-2xl border-2 border-dashed border-indigo-200 shadow-inner">
-            <img id="tktQrImage" src="" alt="Ticket QR Code" class="w-48 h-48 rounded-lg object-contain">
+        <div class="pt-4 pb-1 text-center flex flex-col items-center">
+          <div class="p-2 bg-white rounded-lg border border-zinc-200">
+            <img id="tktQrImage" src="" alt="Pass QR Code" class="w-40 h-40 object-contain">
           </div>
-          <p class="text-xs font-mono font-bold text-slate-500 mt-2" id="tktTokenDisplay"></p>
-          <p class="text-[11px] text-slate-400 mt-0.5">Scan this QR at the entrance gate for check-in</p>
+          <p class="text-[11px] font-mono font-medium text-zinc-500 mt-2" id="tktTokenDisplay"></p>
 
           <!-- Attendance Status Badge -->
-          <div id="tktStatusBadge" class="mt-3 px-4 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5 shadow-sm">
-            <i id="tktStatusIcon" class="ph-bold ph-clock"></i>
-            <span id="tktStatusText">Valid Ticket (Not Scanned)</span>
+          <div id="tktStatusBadge" class="mt-2.5 px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1.5 border">
+            <i id="tktStatusIcon" class="ph-bold ph-clock text-xs"></i>
+            <span id="tktStatusText">Pending Gate Scan</span>
           </div>
         </div>
       </div>
 
       <!-- Actions under Ticket -->
-      <div class="mt-6 flex flex-col sm:flex-row items-center gap-3">
-        <button id="downloadTicketBtn" class="flex-1 w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-semibold transition flex items-center justify-center space-x-2">
-          <i class="ph-bold ph-download-simple text-base"></i>
-          <span>Save Ticket / Print</span>
+      <div class="mt-4 flex items-center gap-2">
+        <button id="downloadTicketBtn" class="flex-1 py-2 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-medium transition flex items-center justify-center space-x-1.5">
+          <i class="ph ph-printer text-xs"></i>
+          <span>Print / Save</span>
         </button>
-        <button id="refreshTicketStatusBtn" class="py-2.5 px-4 rounded-xl bg-slate-800/60 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold transition flex items-center justify-center space-x-2">
-          <i class="ph ph-arrows-clockwise text-base"></i>
-          <span>Check Status</span>
+        <button id="refreshTicketStatusBtn" class="py-2 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium transition flex items-center justify-center space-x-1.5">
+          <i class="ph ph-arrows-clockwise text-xs"></i>
+          <span>Refresh</span>
         </button>
       </div>
     </div>
@@ -265,15 +241,15 @@
   </main>
 
   <!-- Footer -->
-  <footer class="py-5 text-center text-xs text-slate-500 border-t border-slate-900/80 space-y-1">
-    <p>FESTIVE-IOI Event Management System &copy; 2026. Secure QR Check-in Protocol.</p>
-    <p class="text-xs text-slate-400 font-medium">Made with <span class="text-rose-500">❤️</span> by <span class="text-indigo-400 font-bold tracking-wide">Mridul Sikarwar</span></p>
+  <footer class="py-5 text-center text-xs text-zinc-500 border-t border-zinc-900 space-y-1">
+    <p>FESTIVE-IOI Event Management System &copy; 2026</p>
+    <p class="text-[11px] text-zinc-400">Made by <span class="text-zinc-300 font-medium">Mridul Sikarwar</span></p>
   </footer>
 
   <!-- Supabase JS & QRCode -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="./js/supabaseClient.js?v=12"></script>
-  <script src="./js/student.js?v=12"></script>
+  <script src="./js/supabaseClient.js?v=13"></script>
+  <script src="./js/student.js?v=13"></script>
 </body>
 </html>

@@ -165,13 +165,13 @@ function showDashboard() {
 
 function switchTab(tab) {
   if (tab === 'scanner') {
-    tabScannerBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 bg-indigo-600 text-white shadow-lg shadow-indigo-600/30';
-    tabDataSheetBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-slate-800';
+    tabScannerBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-zinc-800 text-white shadow-sm';
+    tabDataSheetBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-400 hover:text-zinc-200';
     scannerView.classList.remove('hidden');
     datasheetView.classList.add('hidden');
   } else {
-    tabDataSheetBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 bg-indigo-600 text-white shadow-lg shadow-indigo-600/30';
-    tabScannerBtn.className = 'px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-slate-800';
+    tabDataSheetBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-zinc-800 text-white shadow-sm';
+    tabScannerBtn.className = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-400 hover:text-zinc-200';
     scannerView.classList.add('hidden');
     datasheetView.classList.remove('hidden');
     loadDatasheet();
@@ -209,7 +209,7 @@ async function startCamera() {
 
     isScannerRunning = true;
     toggleCameraBtn.textContent = 'Stop Camera';
-    toggleCameraBtn.className = 'px-3 py-1 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition';
+    toggleCameraBtn.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white transition';
   } catch (err) {
     console.error('Camera start error:', err);
     showAdminAlert('Could not start camera: ' + (err.message || 'Check camera permissions'), 'error');
@@ -222,7 +222,7 @@ async function stopCamera() {
       await html5QrScanner.stop();
       isScannerRunning = false;
       toggleCameraBtn.textContent = 'Start Camera';
-      toggleCameraBtn.className = 'px-3 py-1 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition';
+      toggleCameraBtn.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-white hover:bg-zinc-200 text-zinc-950 transition';
     } catch (err) {
       console.warn('Camera stop notice:', err);
     }
@@ -336,67 +336,64 @@ async function verifyAndMarkTicket(qrData) {
 function renderScanResult(type, data) {
   if (type === 'success') {
     const s = data.student;
-    scanResultBox.className = 'glass-card rounded-2xl p-6 transition-all border-2 border-emerald-500/80 bg-emerald-950/20 text-center animate-pulse-once';
+    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-emerald-600/50 bg-emerald-950/20 text-center';
     scanResultBox.innerHTML = `
-      <div class="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg shadow-emerald-500/20">
+      <div class="w-12 h-12 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-emerald-500/20">
         <i class="ph-bold ph-check-circle"></i>
       </div>
-      <span class="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-500 text-slate-950 uppercase tracking-wider inline-block mb-2">
-        ENTRY APPROVED (1st SCAN)
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider inline-block mb-1.5">
+        Entry Approved
       </span>
-      <h3 class="text-xl font-bold text-white">${s.name}</h3>
-      <p class="text-sm font-mono text-cyan-300 font-bold mt-0.5">${s.enrollment_id}</p>
+      <h3 class="text-base font-semibold text-zinc-100">${s.name}</h3>
+      <p class="text-xs font-mono text-zinc-400 mt-0.5">${s.enrollment_id}</p>
       
-      <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-emerald-500/30 text-xs text-left">
+      <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-zinc-800 text-xs text-left">
         <div>
-          <span class="text-slate-400 block text-[10px]">Department:</span>
-          <span class="text-slate-200 font-semibold truncate">${s.department} (Yr ${s.year})</span>
+          <span class="text-zinc-500 block text-[10px]">Department</span>
+          <span class="text-zinc-300 font-medium truncate">${s.department} (Yr ${s.year})</span>
         </div>
         <div>
-          <span class="text-slate-400 block text-[10px]">Contact:</span>
-          <span class="text-slate-200 font-semibold">${s.phone}</span>
+          <span class="text-zinc-500 block text-[10px]">Contact</span>
+          <span class="text-zinc-300 font-medium">${s.phone}</span>
         </div>
       </div>
-      <p class="text-[11px] text-emerald-400 mt-3 flex items-center justify-center space-x-1">
-        <i class="ph-bold ph-clock"></i>
+      <p class="text-[11px] text-zinc-400 mt-3 flex items-center justify-center space-x-1">
+        <i class="ph ph-clock"></i>
         <span>Marked Present at ${new Date(data.scannedAt).toLocaleTimeString()}</span>
       </p>
     `;
   } else if (type === 'already_scanned') {
     const s = data.student;
     const formattedTime = new Date(data.scannedAt).toLocaleString();
-    scanResultBox.className = 'glass-card rounded-2xl p-6 transition-all border-2 border-rose-600 bg-rose-950/40 text-center animate-bounce-once';
+    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-rose-600/50 bg-rose-950/20 text-center';
     scanResultBox.innerHTML = `
-      <div class="w-16 h-16 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg shadow-rose-500/20">
+      <div class="w-12 h-12 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-rose-500/20">
         <i class="ph-bold ph-prohibit"></i>
       </div>
-      <span class="px-3 py-1 rounded-full text-xs font-black bg-rose-600 text-white uppercase tracking-wider inline-block mb-2">
-        DUPLICATE SCAN REJECTED!
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase tracking-wider inline-block mb-1.5">
+        Duplicate Scan Rejected
       </span>
-      <h3 class="text-lg font-bold text-white">${s ? s.name : 'Unknown Attendee'}</h3>
-      <p class="text-sm font-mono text-rose-300 font-bold mt-0.5">${s ? s.enrollment_id : ''}</p>
+      <h3 class="text-base font-semibold text-zinc-100">${s ? s.name : 'Unknown Attendee'}</h3>
+      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? s.enrollment_id : ''}</p>
       
-      <div class="p-3 mt-3 rounded-xl bg-rose-950/80 border border-rose-800 text-xs text-rose-200">
-        <p class="font-bold">⚠️ TICKET HAS ALREADY BEEN USED</p>
-        <p class="text-[11px] mt-1 text-rose-300">
-          Originally scanned on: <strong>${formattedTime}</strong>
-        </p>
-        <p class="text-[10px] text-rose-400 mt-1">
-          Policy: A ticket cannot be scanned more than once under any circumstances.
+      <div class="p-3 mt-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
+        <p class="font-medium text-rose-300">Ticket has already been used</p>
+        <p class="text-[11px] mt-1 text-zinc-400">
+          Scanned on: <strong>${formattedTime}</strong>
         </p>
       </div>
     `;
   } else {
-    scanResultBox.className = 'glass-card rounded-2xl p-6 transition-all border-2 border-amber-600 bg-amber-950/30 text-center';
+    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-amber-600/50 bg-amber-950/20 text-center';
     scanResultBox.innerHTML = `
-      <div class="w-16 h-16 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-3xl mx-auto mb-3">
+      <div class="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-amber-500/20">
         <i class="ph-bold ph-warning-circle"></i>
       </div>
-      <span class="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500 text-slate-950 uppercase tracking-wider inline-block mb-2">
-        INVALID TICKET
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
+        Invalid Ticket
       </span>
-      <p class="text-sm text-slate-200 font-semibold mt-1">${data.message || 'Ticket not found in cloud database.'}</p>
-      <p class="text-xs text-slate-400 mt-2">Please ensure the student has completed registration on the portal.</p>
+      <p class="text-xs text-zinc-300 font-medium mt-1">${data.message || 'Ticket not found in cloud database.'}</p>
+      <p class="text-[11px] text-zinc-500 mt-1.5">Check if attendee is registered.</p>
     `;
   }
 }
@@ -415,16 +412,16 @@ function addRecentScan(student, status, timestamp) {
   if (recentScans.length > 8) recentScans.pop();
 
   recentScansList.innerHTML = recentScans.map(item => `
-    <div class="p-2.5 rounded-lg ${item.status === 'VERIFIED' ? 'bg-slate-900/80 border border-emerald-900/40' : 'bg-rose-950/30 border border-rose-900/40'} flex items-center justify-between">
+    <div class="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 flex items-center justify-between text-xs">
       <div>
-        <p class="font-bold text-slate-200">${item.name} <span class="font-mono text-[11px] text-slate-400">(${item.enrollment})</span></p>
-        <p class="text-[10px] text-slate-400">${item.dept}</p>
+        <p class="font-medium text-zinc-200">${item.name} <span class="font-mono text-[11px] text-zinc-500">(${item.enrollment})</span></p>
+        <p class="text-[10px] text-zinc-500">${item.dept}</p>
       </div>
       <div class="text-right">
-        <span class="text-[10px] font-bold px-2 py-0.5 rounded ${item.status === 'VERIFIED' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">
+        <span class="text-[10px] font-medium px-2 py-0.5 rounded ${item.status === 'VERIFIED' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-900/50' : 'bg-rose-950/60 text-rose-400 border border-rose-900/50'}">
           ${item.status}
         </span>
-        <p class="text-[10px] text-slate-500 mt-0.5">${item.time}</p>
+        <p class="text-[10px] text-zinc-500 mt-0.5">${item.time}</p>
       </div>
     </div>
   `).join('');
@@ -583,29 +580,29 @@ function renderDatasheetTable() {
       : '—';
 
     return `
-      <tr class="hover:bg-slate-900/40 transition">
-        <td class="py-3 px-4 font-mono font-bold text-indigo-400 whitespace-nowrap">${row.enrollment_id}</td>
-        <td class="py-3 px-4 font-semibold text-white whitespace-nowrap">${row.name}</td>
-        <td class="py-3 px-4 text-slate-300">${row.department}</td>
-        <td class="py-3 px-4 text-center font-bold text-slate-300">Yr ${row.year}</td>
-        <td class="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">${row.phone}</td>
-        <td class="py-3 px-4 text-slate-400 truncate max-w-xs" title="${row.email}">${row.email}</td>
-        <td class="py-3 px-4 whitespace-nowrap">
-          <span class="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center space-x-1.5 w-fit ${
+      <tr class="hover:bg-zinc-900/40 transition">
+        <td class="py-2.5 px-3.5 font-mono font-medium text-zinc-200 whitespace-nowrap">${row.enrollment_id}</td>
+        <td class="py-2.5 px-3.5 font-medium text-zinc-100 whitespace-nowrap">${row.name}</td>
+        <td class="py-2.5 px-3.5 text-zinc-400">${row.department}</td>
+        <td class="py-2.5 px-3.5 text-center font-medium text-zinc-400">Yr ${row.year}</td>
+        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap">${row.phone}</td>
+        <td class="py-2.5 px-3.5 text-zinc-400 truncate max-w-xs" title="${row.email}">${row.email}</td>
+        <td class="py-2.5 px-3.5 whitespace-nowrap">
+          <span class="px-2 py-0.5 rounded text-[10px] font-medium flex items-center space-x-1.5 w-fit ${
             isPresent 
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
-              : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+              ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/50' 
+              : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
           }">
-            <i class="ph-bold ${isPresent ? 'ph-check-circle' : 'ph-clock'}"></i>
+            <i class="ph ${isPresent ? 'ph-check-circle text-emerald-400' : 'ph-clock text-zinc-500'}"></i>
             <span>${row.attendance_status}</span>
           </span>
         </td>
-        <td class="py-3 px-4 font-mono text-slate-400 whitespace-nowrap text-[11px]">${scanTimeFormatted}</td>
-        <td class="py-3 px-4 text-center whitespace-nowrap">
+        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap text-[11px]">${scanTimeFormatted}</td>
+        <td class="py-2.5 px-3.5 text-center whitespace-nowrap">
           <button onclick="handleDeleteStudent('${row.enrollment_id}', '${encodeURIComponent(row.name)}')"
-                  title="Delete student and ticket"
-                  class="px-2.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-700/50 text-rose-300 hover:text-white text-xs font-medium transition inline-flex items-center space-x-1 active:scale-95">
-            <i class="ph-bold ph-trash text-sm text-rose-400"></i>
+                  title="Delete student record"
+                  class="px-2 py-1 rounded text-zinc-400 hover:text-rose-400 hover:bg-rose-950/30 border border-transparent hover:border-rose-900/40 text-xs transition inline-flex items-center space-x-1">
+            <i class="ph ph-trash text-xs"></i>
             <span>Delete</span>
           </button>
         </td>
@@ -618,11 +615,10 @@ function renderDatasheetTable() {
 async function handleDeleteStudent(enrollmentId, encodedName) {
   const name = decodeURIComponent(encodedName || '');
   const confirmed = confirm(
-    `⚠️ DELETE ATTENDEE CONFIRMATION\n\n` +
-    `Are you sure you want to delete:\n` +
+    `Delete attendee record?\n\n` +
     `Name: ${name}\n` +
     `Enrollment ID: ${enrollmentId}\n\n` +
-    `This will permanently delete their student record, entry ticket, and gate attendance scan from the database.`
+    `This will remove the student registration and gate scan from Supabase.`
   );
 
   if (!confirmed) return;
@@ -651,7 +647,7 @@ async function handleDeleteStudent(enrollmentId, encodedName) {
     renderDatasheetTable();
     await loadStats();
 
-    showAdminAlert(`🗑️ Deleted student: ${name} (${enrollmentId})`, 'success');
+    showAdminAlert(`Deleted student: ${name} (${enrollmentId})`, 'success');
   } catch (err) {
     console.error('Failed to delete student:', err);
     showAdminAlert(`Delete failed: ${err.message || err}`, 'error');
@@ -662,23 +658,23 @@ window.handleDeleteStudent = handleDeleteStudent;
 
 // Admin Alert helper
 function showAdminAlert(message, type = 'info') {
-  adminAlert.classList.remove('hidden', 'bg-rose-950/80', 'border-rose-700/60', 'text-rose-200', 'bg-emerald-950/80', 'border-emerald-700/60', 'text-emerald-200', 'bg-indigo-950/80', 'border-indigo-700/60', 'text-indigo-200');
+  adminAlert.className = 'max-w-2xl mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all';
 
-  let iconHtml = '<i class="ph-bold ph-info text-base mt-0.5"></i>';
+  let iconHtml = '<i class="ph ph-info text-sm mt-0.5 text-zinc-400"></i>';
   if (type === 'error') {
-    adminAlert.classList.add('bg-rose-950/80', 'border', 'border-rose-700/60', 'text-rose-200');
-    iconHtml = '<i class="ph-bold ph-x-circle text-base text-rose-400 mt-0.5"></i>';
+    adminAlert.classList.add('bg-rose-950/40', 'border-rose-900/60', 'text-rose-200');
+    iconHtml = '<i class="ph ph-warning-circle text-sm text-rose-400 mt-0.5"></i>';
   } else if (type === 'success') {
-    adminAlert.classList.add('bg-emerald-950/80', 'border', 'border-emerald-700/60', 'text-emerald-200');
-    iconHtml = '<i class="ph-bold ph-check-circle text-base text-emerald-400 mt-0.5"></i>';
+    adminAlert.classList.add('bg-emerald-950/40', 'border-emerald-900/60', 'text-emerald-200');
+    iconHtml = '<i class="ph ph-check-circle text-sm text-emerald-400 mt-0.5"></i>';
   } else {
-    adminAlert.classList.add('bg-indigo-950/80', 'border', 'border-indigo-700/60', 'text-indigo-200');
+    adminAlert.classList.add('bg-zinc-900', 'border-zinc-800', 'text-zinc-300');
   }
 
   adminAlert.innerHTML = `${iconHtml}<span>${message}</span>`;
   setTimeout(() => {
     adminAlert.classList.add('hidden');
-  }, 6000);
+  }, 5000);
 }
 
 // Setup Event Listeners

@@ -10,35 +10,35 @@
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
   <!-- HTML5-QRCode Scanner Library -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <link rel="stylesheet" href="./css/styles.css">
+  <link rel="stylesheet" href="./css/styles.css?v=13">
 </head>
-<body class="flex flex-col min-h-screen">
+<body class="flex flex-col min-h-screen bg-[#09090b] text-zinc-100">
 
   <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-950/70 backdrop-blur-md sticky top-0 z-50">
+  <header class="border-b border-zinc-800/80 bg-[#09090b]/90 backdrop-blur-sm sticky top-0 z-50">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-600/30">
-          <i class="ph-bold ph-shield-check text-xl text-white"></i>
+        <div class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-200">
+          <i class="ph-bold ph-shield-check text-base"></i>
         </div>
         <div>
           <div class="flex items-center space-x-2">
-            <h1 class="font-display font-bold text-lg text-white leading-tight">Admin Gate Control</h1>
-            <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30">STAFF ONLY</span>
+            <h1 class="font-semibold text-sm text-zinc-100 leading-tight">Admin Gate Control</h1>
+            <span class="text-[10px] font-mono text-zinc-400 bg-zinc-800/80 border border-zinc-700/60 px-1.5 py-0.5 rounded">STAFF</span>
           </div>
-          <p class="text-xs text-slate-400 font-medium">FESTIVE IOI 2026 Ticket Verification & Attendance</p>
+          <p class="text-[11px] text-zinc-400">FESTIVE IOI 2026 Ticket Verification & Attendance</p>
         </div>
       </div>
 
-      <div class="flex items-center space-x-3">
-        <a href="/" class="flex items-center space-x-1.5 text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 transition">
-          <i class="ph ph-arrow-left text-sm"></i>
+      <div class="flex items-center space-x-2.5">
+        <a href="/" class="flex items-center space-x-1.5 text-xs text-zinc-400 hover:text-zinc-200 px-2.5 py-1.5 rounded-md border border-zinc-800 hover:bg-zinc-900 transition">
+          <i class="ph ph-arrow-left text-xs"></i>
           <span>Student Portal</span>
         </a>
 
-        <div id="adminControls" class="hidden items-center space-x-2 pl-2 border-l border-slate-800">
-          <button id="adminLogoutBtn" title="Logout" class="flex items-center space-x-1 text-xs text-rose-400 hover:text-rose-300 px-3 py-1.5 rounded-lg border border-rose-900/50 hover:bg-rose-950/40 transition">
-            <i class="ph-bold ph-power"></i>
+        <div id="adminControls" class="hidden items-center space-x-2 pl-2 border-l border-zinc-800">
+          <button id="adminLogoutBtn" title="Logout" class="flex items-center space-x-1 text-xs text-rose-400 hover:text-rose-300 px-2.5 py-1.5 rounded-md border border-zinc-800 hover:bg-rose-950/30 transition">
+            <i class="ph ph-sign-out"></i>
             <span>Exit</span>
           </button>
         </div>
@@ -47,133 +47,130 @@
   </header>
 
   <!-- Notification Banner -->
-  <div id="adminAlert" class="hidden max-w-2xl mx-auto mt-4 px-4 py-3 rounded-xl text-sm flex items-start space-x-3 transition-all"></div>
+  <div id="adminAlert" class="hidden max-w-2xl mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all"></div>
 
   <!-- Main Content -->
   <main class="flex-grow max-w-7xl w-full mx-auto p-4 flex flex-col justify-start">
 
     <!-- ADMIN LOGIN MODAL / VIEW -->
-    <div id="adminLoginSection" class="w-full max-w-md mx-auto my-auto glass-card rounded-2xl p-8 text-center animate-fade-in">
-      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-rose-600/20 border border-rose-500/30 flex items-center justify-center text-rose-400 text-3xl">
-        <i class="ph-duotone ph-key"></i>
+    <div id="adminLoginSection" class="w-full max-w-sm mx-auto my-auto solid-card rounded-xl p-6 sm:p-7 text-center">
+      <div class="w-10 h-10 mx-auto mb-3.5 rounded-lg bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center text-zinc-300 text-lg">
+        <i class="ph-bold ph-key"></i>
       </div>
-      <h2 class="font-display text-2xl font-bold text-white mb-2">Gate Staff Login</h2>
-      <p class="text-slate-400 text-xs mb-6">Enter the administrative secret passcode to access ticket scanner & attendance datasheet.</p>
+      <h2 class="text-lg font-semibold text-zinc-100 mb-1">Gate Staff Login</h2>
+      <p class="text-zinc-400 text-xs mb-5">Enter secret passcode to access ticket scanner & live datasheet.</p>
 
-      <form id="adminLoginForm" class="space-y-4">
+      <form id="adminLoginForm" class="space-y-3.5">
         <div>
           <input type="password" id="adminPasscode" required autocomplete="current-password"
-                 class="glass-input w-full px-4 py-3 rounded-xl text-sm text-center tracking-widest">
+                 class="clean-input w-full px-3 py-2.5 rounded-lg text-xs text-center tracking-widest text-zinc-100">
         </div>
-        <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-semibold text-sm transition shadow-lg shadow-rose-600/30 flex items-center justify-center space-x-2">
-          <i class="ph-bold ph-lock-open text-base"></i>
+        <button type="submit" class="w-full py-2.5 px-4 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-medium text-xs transition flex items-center justify-center space-x-2">
           <span>Authenticate & Open Portal</span>
         </button>
       </form>
     </div>
 
     <!-- ADMIN DASHBOARD (SCANNER + DATASHEET) -->
-    <div id="adminDashboardSection" class="hidden space-y-6">
+    <div id="adminDashboardSection" class="hidden space-y-5">
 
       <!-- STATS OVERVIEW CARDS -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="glass-card rounded-xl p-4 flex items-center justify-between border-l-4 border-indigo-500">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-semibold text-slate-400">Total Registered</p>
-            <h3 id="statTotal" class="text-2xl font-display font-bold text-white mt-1">0</h3>
+            <p class="text-xs font-medium text-zinc-400">Total Registered</p>
+            <h3 id="statTotal" class="text-2xl font-semibold text-zinc-100 mt-1">0</h3>
           </div>
-          <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xl">
-            <i class="ph-bold ph-users"></i>
+          <div class="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-base">
+            <i class="ph ph-users"></i>
           </div>
         </div>
 
-        <div class="glass-card rounded-xl p-4 flex items-center justify-between border-l-4 border-emerald-500">
+        <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-semibold text-slate-400">Present (Scanned)</p>
-            <h3 id="statPresent" class="text-2xl font-display font-bold text-emerald-400 mt-1">0</h3>
+            <p class="text-xs font-medium text-zinc-400">Present (Scanned)</p>
+            <h3 id="statPresent" class="text-2xl font-semibold text-emerald-400 mt-1">0</h3>
           </div>
-          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl">
-            <i class="ph-bold ph-check-circle"></i>
+          <div class="w-8 h-8 rounded-lg bg-emerald-950/50 border border-emerald-900/60 flex items-center justify-center text-emerald-400 text-base">
+            <i class="ph ph-check-circle"></i>
           </div>
         </div>
 
-        <div class="glass-card rounded-xl p-4 flex items-center justify-between border-l-4 border-amber-500">
+        <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-semibold text-slate-400">Pending Check-in</p>
-            <h3 id="statPending" class="text-2xl font-display font-bold text-amber-400 mt-1">0</h3>
+            <p class="text-xs font-medium text-zinc-400">Pending Check-in</p>
+            <h3 id="statPending" class="text-2xl font-semibold text-zinc-300 mt-1">0</h3>
           </div>
-          <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
-            <i class="ph-bold ph-clock"></i>
+          <div class="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-base">
+            <i class="ph ph-clock"></i>
           </div>
         </div>
 
-        <div class="glass-card rounded-xl p-4 flex items-center justify-between border-l-4 border-cyan-500">
+        <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-semibold text-slate-400">Check-in Rate</p>
-            <h3 id="statRate" class="text-2xl font-display font-bold text-cyan-400 mt-1">0%</h3>
+            <p class="text-xs font-medium text-zinc-400">Check-in Rate</p>
+            <h3 id="statRate" class="text-2xl font-semibold text-zinc-100 mt-1">0%</h3>
           </div>
-          <div class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xl">
-            <i class="ph-bold ph-chart-pie-slice"></i>
+          <div class="w-8 h-8 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-base">
+            <i class="ph ph-chart-pie-slice"></i>
           </div>
         </div>
       </div>
 
       <!-- TABS NAVIGATION -->
-      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-        <div class="flex space-x-2">
-          <button id="tabScannerBtn" class="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 bg-indigo-600 text-white shadow-lg shadow-indigo-600/30">
-            <i class="ph-bold ph-camera text-base"></i>
-            <span>Ticket Scanner (Camera & Entry)</span>
+      <div class="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+        <div class="flex space-x-1.5 p-1 bg-zinc-900 border border-zinc-800 rounded-lg">
+          <button id="tabScannerBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-zinc-800 text-white shadow-sm">
+            <i class="ph ph-camera text-sm"></i>
+            <span>Ticket Scanner</span>
           </button>
-          <button id="tabDataSheetBtn" class="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-slate-800">
-            <i class="ph-bold ph-table text-base"></i>
-            <span>Live Data Sheet</span>
+          <button id="tabDataSheetBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-400 hover:text-zinc-200">
+            <i class="ph ph-table text-sm"></i>
+            <span>Data Sheet</span>
           </button>
         </div>
 
         <div class="flex items-center space-x-2">
-          <button id="refreshDataBtn" title="Refresh Data" class="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:text-white text-xs flex items-center space-x-1 transition">
-            <i class="ph ph-arrows-clockwise text-sm"></i>
+          <button id="refreshDataBtn" title="Refresh Data" class="px-3 py-1.5 rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-white text-xs flex items-center space-x-1.5 transition">
+            <i class="ph ph-arrows-clockwise text-xs"></i>
             <span>Refresh</span>
           </button>
-          <a href="/api/admin/export-csv" id="exportCsvBtn" download="attendance_datasheet.csv" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 transition">
-            <i class="ph-bold ph-file-csv text-base"></i>
+          <a href="/api/admin/export-csv" id="exportCsvBtn" download="attendance_datasheet.csv" class="px-3 py-1.5 rounded-md bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-medium flex items-center space-x-1.5 transition">
+            <i class="ph ph-download-simple text-xs"></i>
             <span>Export CSV</span>
           </a>
         </div>
       </div>
 
       <!-- VIEW 1: TICKET SCANNER VIEW -->
-      <div id="scannerView" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div id="scannerView" class="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
         <!-- Left Column: Camera Scanner & Manual Input -->
         <div class="lg:col-span-6 space-y-4">
-          <div class="glass-card rounded-2xl p-5">
+          <div class="solid-card rounded-xl p-5">
             <div class="flex items-center justify-between mb-3">
-              <h3 class="text-sm font-bold text-white flex items-center space-x-2">
-                <i class="ph-bold ph-scan text-indigo-400 text-base"></i>
-                <span>Live QR Camera Scanner</span>
+              <h3 class="text-xs font-medium text-zinc-300 flex items-center space-x-2">
+                <i class="ph ph-scan text-sm text-zinc-400"></i>
+                <span>QR Camera Scanner</span>
               </h3>
-              <div class="flex items-center space-x-2">
-                <button id="toggleCameraBtn" class="px-3 py-1 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition">
-                  Start Camera
-                </button>
-              </div>
+              <button id="toggleCameraBtn" class="px-2.5 py-1 rounded-md text-xs font-medium bg-white hover:bg-zinc-200 text-zinc-950 transition">
+                Start Camera
+              </button>
             </div>
 
             <!-- HTML5 QR Camera container -->
-            <div id="reader" class="bg-black/60 min-h-[260px] flex items-center justify-center text-slate-500 text-xs">
+            <div id="reader" class="bg-black min-h-[260px] flex items-center justify-center text-zinc-500 text-xs">
               <span class="p-4 text-center">Click "Start Camera" above to activate camera scanner</span>
             </div>
 
-            <div class="mt-4 pt-4 border-t border-slate-800">
-              <label class="block text-xs font-medium text-slate-400 mb-1.5">
+            <div class="mt-4 pt-4 border-t border-zinc-800/80">
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5">
                 Manual Entry / Barcode Scanner Input:
               </label>
               <form id="manualScanForm" class="flex space-x-2">
-                <input type="text" id="manualInput" placeholder="Enter Enrollment ID or Ticket Token"
-                       class="glass-input flex-1 px-4 py-2 rounded-xl text-xs uppercase font-mono">
-                <button type="submit" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition">
+                <input type="text" id="manualInput" placeholder="Enrollment ID or Ticket Token"
+                       class="clean-input flex-1 px-3 py-2 rounded-lg text-xs uppercase font-mono">
+                <button type="submit" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700 transition">
                   Verify & Mark
                 </button>
               </form>
@@ -185,22 +182,22 @@
         <div class="lg:col-span-6 space-y-4">
           
           <!-- SCAN RESULT NOTICE BOX (SUCCESS / DUPLICATE / ERROR) -->
-          <div id="scanResultBox" class="glass-card rounded-2xl p-6 transition-all min-h-[280px] flex flex-col items-center justify-center text-center">
-            <div class="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-3xl mb-3">
-              <i class="ph-duotone ph-qr-code"></i>
+          <div id="scanResultBox" class="solid-card rounded-xl p-6 min-h-[260px] flex flex-col items-center justify-center text-center transition-all">
+            <div class="w-12 h-12 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-2xl mb-3">
+              <i class="ph ph-qr-code"></i>
             </div>
-            <h4 class="text-base font-bold text-slate-300">Awaiting Ticket Scan...</h4>
-            <p class="text-xs text-slate-500 max-w-xs mt-1">Point the camera towards the student's ticket QR code to verify entry.</p>
+            <h4 class="text-sm font-medium text-zinc-300">Awaiting Ticket Scan...</h4>
+            <p class="text-xs text-zinc-500 max-w-xs mt-1">Point the camera towards the student's ticket QR code to verify entry.</p>
           </div>
 
           <!-- MINI RECENT SCANS LOG -->
-          <div class="glass-card rounded-2xl p-5">
-            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center justify-between">
+          <div class="solid-card rounded-xl p-4">
+            <h4 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
               <span>Recent Gate Scans</span>
-              <span class="text-[10px] text-slate-500">Real-time</span>
+              <span class="text-[10px] text-zinc-500">Live</span>
             </h4>
-            <div id="recentScansList" class="space-y-2 text-xs max-h-48 overflow-y-auto">
-              <p class="text-slate-500 text-xs text-center py-4">No tickets scanned in this session yet.</p>
+            <div id="recentScansList" class="space-y-1.5 text-xs max-h-44 overflow-y-auto">
+              <p class="text-zinc-500 text-xs text-center py-4">No tickets scanned in this session yet.</p>
             </div>
           </div>
 
@@ -209,31 +206,31 @@
       </div>
 
       <!-- VIEW 2: LIVE ATTENDANCE DATA SHEET -->
-      <div id="datasheetView" class="hidden space-y-4">
+      <div id="datasheetView" class="hidden space-y-3.5">
         
         <!-- Search and Filters Bar -->
-        <div class="glass-card rounded-xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
-          <div class="relative w-full md:w-80">
-            <i class="ph ph-magnifying-glass absolute left-3.5 top-2.5 text-slate-400 text-sm"></i>
-            <input type="text" id="tableSearch" placeholder="Search by name, ID, phone, email..."
-                   class="glass-input w-full pl-9 pr-4 py-2 rounded-lg text-xs placeholder-slate-500">
+        <div class="solid-card rounded-xl p-3 flex flex-col md:flex-row gap-2.5 items-center justify-between">
+          <div class="relative w-full md:w-72">
+            <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-500 text-xs"></i>
+            <input type="text" id="tableSearch" placeholder="Search attendee..."
+                   class="clean-input w-full pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-500">
           </div>
 
           <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
             <!-- Filter Status -->
-            <select id="filterStatus" class="glass-input px-3 py-2 rounded-lg text-xs">
+            <select id="filterStatus" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
               <option value="ALL">All Status</option>
               <option value="Present">Present (Scanned)</option>
               <option value="Not Scanned">Not Scanned (Pending)</option>
             </select>
 
             <!-- Filter Department -->
-            <select id="filterDept" class="glass-input px-3 py-2 rounded-lg text-xs">
+            <select id="filterDept" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
               <option value="ALL">All Departments</option>
             </select>
 
             <!-- Filter Year -->
-            <select id="filterYear" class="glass-input px-3 py-2 rounded-lg text-xs">
+            <select id="filterYear" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
               <option value="ALL">All Years</option>
               <option value="1">Year 1</option>
               <option value="2">Year 2</option>
@@ -245,34 +242,36 @@
         </div>
 
         <!-- Data Table Container -->
-        <div class="glass-card rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
+        <div class="solid-card rounded-xl overflow-hidden border border-zinc-800">
           <div class="overflow-x-auto max-h-[600px]">
             <table class="w-full text-left text-xs custom-table">
               <thead>
-                <tr class="text-slate-400 border-b border-slate-800 font-semibold uppercase tracking-wider text-[11px]">
-                  <th class="py-3 px-4">Enrollment ID</th>
-                  <th class="py-3 px-4">Student Name</th>
-                  <th class="py-3 px-4">Department</th>
-                  <th class="py-3 px-4">Year</th>
-                  <th class="py-3 px-4">Phone</th>
-                  <th class="py-3 px-4">Email</th>
-                  <th class="py-3 px-4">Attendance Status</th>
-                  <th class="py-3 px-4">Scanned Timestamp</th>
-                  <th class="py-3 px-4 text-center">Action</th>
+                <tr>
+                  <th class="py-2.5 px-3.5">Enrollment ID</th>
+                  <th class="py-2.5 px-3.5">Name</th>
+                  <th class="py-2.5 px-3.5">Department</th>
+                  <th class="py-2.5 px-3.5 text-center">Year</th>
+                  <th class="py-2.5 px-3.5">Phone</th>
+                  <th class="py-2.5 px-3.5">Email</th>
+                  <th class="py-2.5 px-3.5">Attendance</th>
+                  <th class="py-2.5 px-3.5">Scanned Time</th>
+                  <th class="py-2.5 px-3.5 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody id="datasheetBody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tbody id="datasheetBody" class="divide-y divide-zinc-800/60 text-zinc-300">
                 <tr>
-                  <td colspan="9" class="text-center py-8 text-slate-500">Loading attendee datasheet...</td>
+                  <td colspan="9" class="text-center py-8 text-zinc-500">
+                    Loading attendee data from Supabase...
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <!-- Table Footer -->
-          <div class="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-            <span>Showing <span id="recordCount" class="font-bold text-white">0</span> attendees</span>
-            <span class="text-[11px] text-slate-500">Attendance status updates instantly when tickets are scanned</span>
+          <div class="p-3 bg-zinc-950/80 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-400">
+            <span>Showing <span id="recordCount" class="font-medium text-zinc-200">0</span> attendees</span>
+            <span class="text-[11px] text-zinc-500">Updates instantly upon ticket scan</span>
           </div>
         </div>
 
@@ -283,14 +282,14 @@
   </main>
 
   <!-- Footer -->
-  <footer class="py-5 text-center text-xs text-slate-500 border-t border-slate-900/80 space-y-1">
+  <footer class="py-5 text-center text-xs text-zinc-500 border-t border-zinc-900 space-y-1">
     <p>FESTIVE-IOI Admin Gate &copy; 2026. Secure QR Verification Protocol.</p>
-    <p class="text-xs text-slate-400 font-medium">Made with <span class="text-rose-500">❤️</span> by <span class="text-indigo-400 font-bold tracking-wide">Mridul Sikarwar</span></p>
+    <p class="text-[11px] text-zinc-400">Made by <span class="text-zinc-300 font-medium">Mridul Sikarwar</span></p>
   </footer>
 
   <!-- Supabase JS -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./js/supabaseClient.js?v=12"></script>
-  <script src="./js/admin.js?v=12"></script>
+  <script src="./js/supabaseClient.js?v=13"></script>
+  <script src="./js/admin.js?v=13"></script>
 </body>
 </html>

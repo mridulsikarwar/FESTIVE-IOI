@@ -533,14 +533,14 @@ async function renderTicket(student) {
   const text = document.getElementById('tktStatusText');
 
   if (student.attendance_status === 'Present') {
-    badge.className = 'mt-3 px-4 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5 bg-emerald-100 text-emerald-800 border border-emerald-300';
-    icon.className = 'ph-bold ph-check-circle text-emerald-600 text-sm';
+    badge.className = 'mt-2.5 px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200';
+    icon.className = 'ph-bold ph-check-circle text-emerald-600 text-xs';
     const scanTimeStr = student.scanned_at ? ` at ${new Date(student.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
-    text.textContent = `✅ CHECKED IN (ATTENDANCE VERIFIED${scanTimeStr.toUpperCase()})`;
+    text.textContent = `Checked In (${scanTimeStr.trim() || 'Verified'})`;
   } else {
-    badge.className = 'mt-3 px-4 py-1.5 rounded-full text-xs font-bold flex items-center space-x-1.5 bg-amber-100 text-amber-900 border border-amber-300';
-    icon.className = 'ph-bold ph-clock text-amber-600 text-sm';
-    text.textContent = '🎟️ VALID TICKET (PENDING GATE SCAN)';
+    badge.className = 'mt-2.5 px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1.5 bg-zinc-100 text-zinc-700 border border-zinc-200';
+    icon.className = 'ph-bold ph-clock text-zinc-500 text-xs';
+    text.textContent = 'Pending Gate Scan';
   }
 }
 
@@ -625,17 +625,17 @@ async function handleSignOut() {
 
 // Alerts helper
 function showAlert(message, type = 'info') {
-  alertBox.classList.remove('hidden', 'bg-rose-950/80', 'border-rose-700/60', 'text-rose-200', 'bg-emerald-950/80', 'border-emerald-700/60', 'text-emerald-200', 'bg-indigo-950/80', 'border-indigo-700/60', 'text-indigo-200');
+  alertBox.className = 'max-w-lg mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all';
 
-  let iconHtml = '<i class="ph-bold ph-info text-base mt-0.5"></i>';
+  let iconHtml = '<i class="ph ph-info text-sm mt-0.5 text-zinc-400"></i>';
   if (type === 'error') {
-    alertBox.classList.add('bg-rose-950/80', 'border', 'border-rose-700/60', 'text-rose-200');
-    iconHtml = '<i class="ph-bold ph-x-circle text-base text-rose-400 mt-0.5"></i>';
+    alertBox.classList.add('bg-rose-950/40', 'border-rose-900/60', 'text-rose-200');
+    iconHtml = '<i class="ph ph-warning-circle text-sm text-rose-400 mt-0.5"></i>';
   } else if (type === 'success') {
-    alertBox.classList.add('bg-emerald-950/80', 'border', 'border-emerald-700/60', 'text-emerald-200');
-    iconHtml = '<i class="ph-bold ph-check-circle text-base text-emerald-400 mt-0.5"></i>';
+    alertBox.classList.add('bg-emerald-950/40', 'border-emerald-900/60', 'text-emerald-200');
+    iconHtml = '<i class="ph ph-check-circle text-sm text-emerald-400 mt-0.5"></i>';
   } else {
-    alertBox.classList.add('bg-indigo-950/80', 'border', 'border-indigo-700/60', 'text-indigo-200');
+    alertBox.classList.add('bg-zinc-900', 'border-zinc-800', 'text-zinc-300');
   }
 
   alertBox.innerHTML = `${iconHtml}<span>${message}</span>`;
@@ -643,7 +643,7 @@ function showAlert(message, type = 'info') {
 
   setTimeout(() => {
     alertBox.classList.add('hidden');
-  }, 7000);
+  }, 5000);
 }
 
 // Setup Event Listeners
