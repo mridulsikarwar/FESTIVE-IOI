@@ -1,12 +1,27 @@
 // Student Portal Client Script (Direct Supabase Integration & Google OAuth)
 
 let appConfig = {
-  allowedDomain: APP_CONFIG.allowedDomain || 'college.edu',
+  allowedDomains: APP_CONFIG.allowedDomains || [APP_CONFIG.allowedDomain || 'pwioi.com'],
+  allowedDomain: APP_CONFIG.allowedDomain || 'pwioi.com',
   googleClientId: APP_CONFIG.googleClientId || '',
   isGoogleConfigured: Boolean(APP_CONFIG.googleClientId)
 };
 
 let currentStudent = null;
+
+// Domain validation helpers
+function isDomainAllowed(email) {
+  if (!email || !email.includes('@')) return false;
+  if (!appConfig.allowedDomains || appConfig.allowedDomains.length === 0) return true;
+  if (appConfig.allowedDomains.includes('*')) return true;
+  const userDomain = email.split('@')[1].toLowerCase().trim();
+  return appConfig.allowedDomains.some(d => d.toLowerCase().trim() === userDomain);
+}
+
+function getAllowedDomainsLabel() {
+  if (!appConfig.allowedDomains || appConfig.allowedDomains.includes('*')) return 'All domains';
+  return appConfig.allowedDomains.map(d => '@' + d).join(' or ');
+}
 
 // DOM Elements
 const authSection = document.getElementById('authSection');
@@ -29,13 +44,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Setup allowed domain labels
 function setupDomainDisplay() {
-  document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = appConfig.allowedDomain);
+  const label = getAllowedDomainsLabel();
+  document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = label);
   const domainText = document.getElementById('domainText');
-  if (domainText) domainText.textContent = '@' + appConfig.allowedDomain;
+  if (domainText) domainText.textContent = label;
 
   const demoEmailInput = document.getElementById('demoEmail');
   if (demoEmailInput && (!demoEmailInput.value || demoEmailInput.value.includes('@'))) {
-    demoEmailInput.value = 'student@' + appConfig.allowedDomain;
+    demoEmailInput.value = 'student@' + (appConfig.allowedDomains[0] || 'pwioi.com');
   }
 }
 
@@ -117,9 +133,9 @@ async function handleAuthenticatedUser(user) {
   }
 
   // 1. Strict Domain Restriction Check
-  const userDomain = email.split('@')[1];
-  if (appConfig.allowedDomain && appConfig.allowedDomain !== '*' && userDomain !== appConfig.allowedDomain) {
-    showAlert(`Access Denied: Only accounts ending in @${appConfig.allowedDomain} are permitted. (Signed in as: ${email})`, 'error');
+  if (!isDomainAllowed(email)) {
+    const label = getAllowedDomainsLabel();
+    showAlert(`Access Denied: Only accounts ending in ${label} are permitted. (Signed in as: ${email})`, 'error');
     if (supabase) {
       try { await supabase.auth.signOut(); } catch (e) {}
     }
@@ -470,9 +486,9 @@ async function handleInstantAuth(e) {
   const email = document.getElementById('demoEmail').value.trim().toLowerCase();
 
   // 1. Strict Domain Restriction Check
-  const userDomain = email.split('@')[1];
-  if (appConfig.allowedDomain && appConfig.allowedDomain !== '*' && userDomain !== appConfig.allowedDomain) {
-    showAlert(`Access Denied: Only accounts ending in @${appConfig.allowedDomain} are permitted.`, 'error');
+  if (!isDomainAllowed(email)) {
+    const label = getAllowedDomainsLabel();
+    showAlert(`Access Denied: Only accounts ending in ${label} are permitted.`, 'error');
     return;
   }
 

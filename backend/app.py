@@ -37,7 +37,8 @@ except ImportError:
 
 # App Configuration
 PORT = int(os.getenv("PORT", 8000))
-ALLOWED_DOMAIN = os.getenv("ALLOWED_DOMAIN", "college.edu").strip()
+ALLOWED_DOMAIN = os.getenv("ALLOWED_DOMAIN", "pwioi.com,pw.live").strip()
+ALLOWED_DOMAINS = [d.strip().lower() for d in ALLOWED_DOMAIN.split(",") if d.strip()]
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "admin123").strip()
 JWT_SECRET = os.getenv("JWT_SECRET", "cloud_festive_jwt_secret_key_2026").strip()
@@ -178,10 +179,11 @@ def auth_google(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     if "@" not in email:
         raise HTTPException(status_code=400, detail="Invalid email address.")
     user_domain = email.split("@")[1]
-    if ALLOWED_DOMAIN and ALLOWED_DOMAIN != "*" and user_domain != ALLOWED_DOMAIN:
+    if ALLOWED_DOMAINS and "*" not in ALLOWED_DOMAINS and user_domain not in ALLOWED_DOMAINS:
+        allowed_str = " or ".join(["@" + d for d in ALLOWED_DOMAINS])
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Domain Restriction: Only email addresses ending with @{ALLOWED_DOMAIN} are permitted. (Received: {email})"
+            detail=f"Domain Restriction: Only email addresses ending with {allowed_str} are permitted. (Received: {email})"
         )
 
     # Check existing student in Cloud DB
