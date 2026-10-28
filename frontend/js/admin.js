@@ -16,9 +16,19 @@ const adminControls = document.getElementById('adminControls');
 const adminLogoutBtn = document.getElementById('adminLogoutBtn');
 
 const tabScannerBtn = document.getElementById('tabScannerBtn');
+const tabPaymentsBtn = document.getElementById('tabPaymentsBtn');
 const tabDataSheetBtn = document.getElementById('tabDataSheetBtn');
 const scannerView = document.getElementById('scannerView');
+const paymentsView = document.getElementById('paymentsView');
 const datasheetView = document.getElementById('datasheetView');
+
+const pendingPaymentsCountBadge = document.getElementById('pendingPaymentsCountBadge');
+const paymentsBody = document.getElementById('paymentsBody');
+const paymentSearch = document.getElementById('paymentSearch');
+const filterPaymentStatus = document.getElementById('filterPaymentStatus');
+const statGuestTotal = document.getElementById('statGuestTotal');
+const statGuestPending = document.getElementById('statGuestPending');
+const statGuestApproved = document.getElementById('statGuestApproved');
 
 const toggleCameraBtn = document.getElementById('toggleCameraBtn');
 const manualScanForm = document.getElementById('manualScanForm');
@@ -34,6 +44,8 @@ const filterDept = document.getElementById('filterDept');
 const filterYear = document.getElementById('filterYear');
 const datasheetBody = document.getElementById('datasheetBody');
 const recordCount = document.getElementById('recordCount');
+
+let paymentsData = [];
 
 // Initialize
 function initAdmin() {
@@ -114,6 +126,7 @@ async function checkAdminSession() {
     showDashboard();
     await loadDepartmentsFilter();
     await loadStats();
+    await loadPayments();
     await loadDatasheet();
     setupRealtimeSubscription();
   } else {
@@ -133,6 +146,7 @@ async function handleAdminLogin(e) {
     showDashboard();
     await loadDepartmentsFilter();
     await loadStats();
+    await loadPayments();
     await loadDatasheet();
     setupRealtimeSubscription();
   } else {
@@ -166,15 +180,28 @@ function showDashboard() {
 function switchTab(tab) {
   const activeClass = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
   const inactiveClass = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200';
+
   if (tab === 'scanner') {
     tabScannerBtn.className = activeClass;
+    if (tabPaymentsBtn) tabPaymentsBtn.className = inactiveClass;
     tabDataSheetBtn.className = inactiveClass;
     scannerView.classList.remove('hidden');
+    if (paymentsView) paymentsView.classList.add('hidden');
     datasheetView.classList.add('hidden');
+  } else if (tab === 'payments') {
+    if (tabPaymentsBtn) tabPaymentsBtn.className = activeClass;
+    tabScannerBtn.className = inactiveClass;
+    tabDataSheetBtn.className = inactiveClass;
+    scannerView.classList.add('hidden');
+    if (paymentsView) paymentsView.classList.remove('hidden');
+    datasheetView.classList.add('hidden');
+    loadPayments();
   } else {
     tabDataSheetBtn.className = activeClass;
     tabScannerBtn.className = inactiveClass;
+    if (tabPaymentsBtn) tabPaymentsBtn.className = inactiveClass;
     scannerView.classList.add('hidden');
+    if (paymentsView) paymentsView.classList.add('hidden');
     datasheetView.classList.remove('hidden');
     loadDatasheet();
   }
@@ -283,7 +310,22 @@ async function verifyAndMarkTicket(qrData) {
       return;
     }
 
-    // 2. CHECK IF TICKET HAS ALREADY BEEN SCANNED
+    // 2. CHECK PAYMENT STATUS (For External Guests)
+    if (student.payment_status === 'pending_verification') {
+      playErrorBuzzer();
+      renderScanResult('payment_pending', { student });
+      addRecentScan(student, 'PAYMENT UNVERIFIED', new Date().toISOString());
+      return;
+    }
+
+    if (student.payment_status === 'rejected') {
+      playErrorBuzzer();
+      renderScanResult('payment_rejected', { student });
+      addRecentScan(student, 'PAYMENT REJECTED', new Date().toISOString());
+      return;
+    }
+
+    // 3. CHECK IF TICKET HAS ALREADY BEEN SCANNED
     const { data: existingScan } = await supabase
       .from('attendance')
       .select('*')
@@ -301,7 +343,7 @@ async function verifyAndMarkTicket(qrData) {
       return;
     }
 
-    // 3. RECORD FRESH ATTENDANCE IN SUPABASE
+    // 4. RECORD FRESH ATTENDANCE IN SUPABASE
     const scanTime = new Date().toISOString();
     const { error: insertError } = await supabase
       .from('attendance')
@@ -313,13 +355,12 @@ async function verifyAndMarkTicket(qrData) {
       });
 
     if (insertError) {
-      // If constraint violation caught at db level
       playErrorBuzzer();
       renderScanResult('already_scanned', { student, scannedAt: scanTime });
       return;
     }
 
-    // 4. ENTRY APPROVED!
+    // 5. ENTRY APPROVED!
     playSuccessChime();
     renderScanResult('success', {
       student,
@@ -338,6 +379,10 @@ async function verifyAndMarkTicket(qrData) {
 function renderScanResult(type, data) {
   if (type === 'success') {
     const s = data.student;
+    const roleLabel = s.user_type === 'guest'
+      ? `${s.company || 'External'} (Guest Pass)`
+      : (s.year === 'Faculty' ? `${s.department} (Faculty)` : `${s.department} (Yr ${s.year})`);
+
     scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-emerald-600/50 bg-emerald-950/20 text-center';
     scanResultBox.innerHTML = `
       <div class="w-12 h-12 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-emerald-500/20">
@@ -351,8 +396,8 @@ function renderScanResult(type, data) {
       
       <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-zinc-800 text-xs text-left">
         <div>
-          <span class="text-zinc-500 block text-[10px]">Department</span>
-          <span class="text-zinc-300 font-medium truncate">${s.department} (Yr ${s.year})</span>
+          <span class="text-zinc-500 block text-[10px]">Affiliation / Role</span>
+          <span class="text-zinc-300 font-medium truncate">${roleLabel}</span>
         </div>
         <div>
           <span class="text-zinc-500 block text-[10px]">Contact</span>
@@ -363,6 +408,54 @@ function renderScanResult(type, data) {
         <i class="ph ph-clock"></i>
         <span>Marked Present at ${new Date(data.scannedAt).toLocaleTimeString()}</span>
       </p>
+    `;
+  } else if (type === 'payment_pending') {
+    const s = data.student;
+    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-amber-600/50 bg-amber-950/20 text-center';
+    scanResultBox.innerHTML = `
+      <div class="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-amber-500/20">
+        <i class="ph-bold ph-hourglass-high"></i>
+      </div>
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
+        Payment Pending Verification
+      </span>
+      <h3 class="text-base font-semibold text-zinc-100">${s.name}</h3>
+      <p class="text-xs font-mono text-amber-300 mt-0.5">${s.enrollment_id} &bull; ${s.company || 'External Guest'}</p>
+
+      <div class="p-3 mt-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-left space-y-1.5">
+        <div class="flex justify-between">
+          <span class="text-zinc-500">Amount Due:</span>
+          <span class="font-bold text-emerald-400">₹500.00</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-zinc-500">Submitted UTR:</span>
+          <span class="font-mono font-bold text-amber-300 select-all">${s.utr_number || 'N/A'}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-zinc-500">Contact:</span>
+          <span class="text-zinc-300">${s.phone}</span>
+        </div>
+      </div>
+
+      <button onclick="approveAndCheckIn('${s.enrollment_id}')"
+              class="btn-primary w-full py-2.5 px-3 mt-3.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md">
+        <i class="ph-bold ph-check"></i>
+        <span>Confirm Payment & Check In Now</span>
+      </button>
+    `;
+  } else if (type === 'payment_rejected') {
+    const s = data.student;
+    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-rose-600/50 bg-rose-950/20 text-center';
+    scanResultBox.innerHTML = `
+      <div class="w-12 h-12 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-rose-500/20">
+        <i class="ph-bold ph-x-circle"></i>
+      </div>
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase tracking-wider inline-block mb-1.5">
+        Payment Rejected
+      </span>
+      <h3 class="text-base font-semibold text-zinc-100">${s ? s.name : 'Unknown Attendee'}</h3>
+      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? s.enrollment_id : ''}</p>
+      <p class="text-xs text-zinc-400 mt-2">The ₹500 payment submission for this pass was rejected by staff.</p>
     `;
   } else if (type === 'already_scanned') {
     const s = data.student;
@@ -399,6 +492,26 @@ function renderScanResult(type, data) {
     `;
   }
 }
+
+// 1-Click Approve Payment and Immediately Admit Attendee
+async function approveAndCheckIn(enrollmentId) {
+  try {
+    showAdminAlert(`Approving payment for ${enrollmentId}...`, 'info');
+    const { error: updateError } = await supabase
+      .from('students')
+      .update({ payment_status: 'approved' })
+      .eq('enrollment_id', enrollmentId);
+
+    if (updateError) throw updateError;
+
+    showAdminAlert(`Payment approved! Admitting attendee...`, 'success');
+    await loadPayments();
+    await verifyAndMarkTicket(enrollmentId);
+  } catch (e) {
+    showAdminAlert(`Approval error: ${e.message || e}`, 'error');
+  }
+}
+window.approveAndCheckIn = approveAndCheckIn;
 
 // Add to Recent Scans Activity Log
 function addRecentScan(student, status, timestamp) {
@@ -486,6 +599,159 @@ async function loadDepartmentsFilter() {
   }
 }
 
+// Load Payments from Supabase (External Guests UPI ₹500)
+async function loadPayments() {
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .or('user_type.eq.guest,amount_paid.gt.0,utr_number.not.is.null')
+      .order('registered_at', { ascending: false });
+
+    if (error) throw error;
+    paymentsData = data || [];
+
+    // Stats
+    const total = paymentsData.length;
+    const pending = paymentsData.filter(p => p.payment_status === 'pending_verification').length;
+    const approved = paymentsData.filter(p => p.payment_status === 'approved').length;
+
+    if (statGuestTotal) statGuestTotal.textContent = total;
+    if (statGuestPending) statGuestPending.textContent = pending;
+    if (statGuestApproved) statGuestApproved.textContent = approved;
+
+    if (pendingPaymentsCountBadge) {
+      if (pending > 0) {
+        pendingPaymentsCountBadge.textContent = pending;
+        pendingPaymentsCountBadge.classList.remove('hidden');
+      } else {
+        pendingPaymentsCountBadge.classList.add('hidden');
+      }
+    }
+
+    renderPaymentsTable();
+  } catch (e) {
+    console.error('Payments load error:', e);
+  }
+}
+
+// Render Payments Table
+function renderPaymentsTable() {
+  if (!paymentsBody) return;
+  const searchTerm = (paymentSearch ? paymentSearch.value : '').toLowerCase().trim();
+  const statusFilter = filterPaymentStatus ? filterPaymentStatus.value : 'ALL';
+
+  const filtered = paymentsData.filter(row => {
+    const matchSearch = !searchTerm ||
+      (row.name && row.name.toLowerCase().includes(searchTerm)) ||
+      (row.enrollment_id && row.enrollment_id.toLowerCase().includes(searchTerm)) ||
+      (row.company && row.company.toLowerCase().includes(searchTerm)) ||
+      (row.utr_number && row.utr_number.toLowerCase().includes(searchTerm)) ||
+      (row.phone && row.phone.includes(searchTerm));
+
+    const matchStatus = (statusFilter === 'ALL') || (row.payment_status === statusFilter);
+    return matchSearch && matchStatus;
+  });
+
+  if (filtered.length === 0) {
+    paymentsBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="text-center py-8 text-zinc-500">
+          No external guest payments match the filter criteria.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  paymentsBody.innerHTML = filtered.map(p => {
+    const isPending = p.payment_status === 'pending_verification';
+    const isApproved = p.payment_status === 'approved';
+
+    let statusBadge = '';
+    if (isPending) {
+      statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60">Pending</span>';
+    } else if (isApproved) {
+      statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">Approved</span>';
+    } else {
+      statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/60">Rejected</span>';
+    }
+
+    return `
+      <tr class="hover:bg-zinc-900/40 transition">
+        <td class="py-2.5 px-3.5 font-mono text-zinc-300 font-medium whitespace-nowrap">${p.enrollment_id}</td>
+        <td class="py-2.5 px-3.5 font-semibold text-zinc-100 whitespace-nowrap">${p.name}</td>
+        <td class="py-2.5 px-3.5 text-zinc-300">${p.company || 'External Guest'}</td>
+        <td class="py-2.5 px-3.5 text-zinc-400 whitespace-nowrap">
+          <div>${p.phone}</div>
+          <div class="text-[10px] text-zinc-500 truncate max-w-[150px]">${p.email}</div>
+        </td>
+        <td class="py-2.5 px-3.5 font-mono font-bold text-amber-400 whitespace-nowrap select-all">
+          <div class="flex items-center space-x-1">
+            <span>${p.utr_number || 'N/A'}</span>
+            ${p.utr_number ? `<button onclick="navigator.clipboard.writeText('${p.utr_number}'); showAdminAlert('UTR copied!', 'success');" title="Copy UTR" class="p-1 text-zinc-500 hover:text-zinc-200"><i class="ph ph-copy text-xs"></i></button>` : ''}
+          </div>
+        </td>
+        <td class="py-2.5 px-3.5 text-center font-bold text-emerald-400 font-mono whitespace-nowrap">₹${p.amount_paid || 500}</td>
+        <td class="py-2.5 px-3.5 whitespace-nowrap">${statusBadge}</td>
+        <td class="py-2.5 px-3.5 text-center whitespace-nowrap">
+          ${isPending ? `
+            <div class="inline-flex space-x-1.5">
+              <button onclick="approveGuestPayment('${p.enrollment_id}')"
+                      class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition inline-flex items-center space-x-1 shadow-sm">
+                <i class="ph-bold ph-check"></i>
+                <span>Approve</span>
+              </button>
+              <button onclick="rejectGuestPayment('${p.enrollment_id}')"
+                      class="px-2 py-1 rounded text-xs text-rose-400 hover:bg-rose-950/40 border border-rose-900/40 transition">
+                <span>Reject</span>
+              </button>
+            </div>
+          ` : `
+            <span class="text-xs text-zinc-500 italic">${isApproved ? 'Verified' : 'Rejected'}</span>
+          `}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function approveGuestPayment(enrollmentId) {
+  try {
+    showAdminAlert(`Approving payment for ${enrollmentId}...`, 'info');
+    const { error } = await supabase
+      .from('students')
+      .update({ payment_status: 'approved' })
+      .eq('enrollment_id', enrollmentId);
+
+    if (error) throw error;
+    showAdminAlert(`Payment for ${enrollmentId} approved successfully!`, 'success');
+    await loadPayments();
+    await loadDatasheet();
+  } catch (e) {
+    showAdminAlert(`Approval error: ${e.message || e}`, 'error');
+  }
+}
+window.approveGuestPayment = approveGuestPayment;
+
+async function rejectGuestPayment(enrollmentId) {
+  if (!confirm(`Reject payment submission for ${enrollmentId}?`)) return;
+  try {
+    const { error } = await supabase
+      .from('students')
+      .update({ payment_status: 'rejected' })
+      .eq('enrollment_id', enrollmentId);
+
+    if (error) throw error;
+    showAdminAlert(`Payment for ${enrollmentId} marked as rejected.`, 'info');
+    await loadPayments();
+    await loadDatasheet();
+  } catch (e) {
+    showAdminAlert(`Reject error: ${e.message || e}`, 'error');
+  }
+}
+window.rejectGuestPayment = rejectGuestPayment;
+
 // Load Datasheet from Supabase
 async function loadDatasheet() {
   try {
@@ -502,10 +768,15 @@ async function loadDatasheet() {
       return {
         enrollment_id: s.enrollment_id,
         name: s.name,
-        department: s.department,
-        year: s.year,
+        department: s.department || s.company || 'External Guest',
+        company: s.company,
+        user_type: s.user_type,
+        year: s.year || (s.user_type === 'guest' ? 'Guest' : 'N/A'),
         phone: s.phone,
         email: s.email,
+        amount_paid: s.amount_paid,
+        utr_number: s.utr_number,
+        payment_status: s.payment_status || 'approved',
         registered_at: s.registered_at,
         attendance_status: isScanned ? 'Present' : 'Not Scanned',
         scanned_at: isScanned && attRecord ? attRecord.scanned_at : null
@@ -525,10 +796,12 @@ function setupRealtimeSubscription() {
       .channel('attendance-gate-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
         loadStats();
+        loadPayments();
         loadDatasheet();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
         loadStats();
+        loadPayments();
         loadDatasheet();
       })
       .subscribe();
@@ -549,6 +822,8 @@ function renderDatasheetTable() {
       (row.enrollment_id && row.enrollment_id.toLowerCase().includes(searchTerm)) ||
       (row.name && row.name.toLowerCase().includes(searchTerm)) ||
       (row.department && row.department.toLowerCase().includes(searchTerm)) ||
+      (row.company && row.company.toLowerCase().includes(searchTerm)) ||
+      (row.utr_number && row.utr_number.toLowerCase().includes(searchTerm)) ||
       (row.phone && row.phone.includes(searchTerm)) ||
       (row.email && row.email.toLowerCase().includes(searchTerm));
 
@@ -567,7 +842,7 @@ function renderDatasheetTable() {
   if (filtered.length === 0) {
     datasheetBody.innerHTML = `
       <tr>
-        <td colspan="9" class="text-center py-8 text-slate-500">
+        <td colspan="10" class="text-center py-8 text-slate-500">
           No records match the active search or filter criteria.
         </td>
       </tr>
@@ -581,14 +856,24 @@ function renderDatasheetTable() {
       ? new Date(row.scanned_at).toLocaleString('en-US', { hour12: true, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
       : '—';
 
+    let payBadge = '';
+    if (row.payment_status === 'pending_verification') {
+      payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60">₹500 Pending</span>';
+    } else if (row.amount_paid > 0) {
+      payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">₹500 Paid</span>';
+    } else {
+      payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-900 text-zinc-400 border border-zinc-800">Free (PW)</span>';
+    }
+
     return `
       <tr class="hover:bg-zinc-900/40 transition">
         <td class="py-2.5 px-3.5 font-mono font-medium text-zinc-200 whitespace-nowrap">${row.enrollment_id}</td>
         <td class="py-2.5 px-3.5 font-medium text-zinc-100 whitespace-nowrap">${row.name}</td>
         <td class="py-2.5 px-3.5 text-zinc-400">${row.department}</td>
-        <td class="py-2.5 px-3.5 text-center font-medium text-zinc-400">Yr ${row.year}</td>
+        <td class="py-2.5 px-3.5 text-center font-medium text-zinc-300 whitespace-nowrap">${row.year === 'Faculty' ? 'Faculty' : (row.year === 'Guest' ? 'Guest' : 'Yr ' + row.year)}</td>
         <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap">${row.phone}</td>
         <td class="py-2.5 px-3.5 text-zinc-400 truncate max-w-xs" title="${row.email}">${row.email}</td>
+        <td class="py-2.5 px-3.5 whitespace-nowrap">${payBadge}</td>
         <td class="py-2.5 px-3.5 whitespace-nowrap">
           <span class="px-2 py-0.5 rounded text-[10px] font-medium flex items-center space-x-1.5 w-fit ${
             isPresent 
@@ -685,6 +970,7 @@ function setupEventListeners() {
   if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', handleAdminLogout);
 
   if (tabScannerBtn) tabScannerBtn.addEventListener('click', () => switchTab('scanner'));
+  if (tabPaymentsBtn) tabPaymentsBtn.addEventListener('click', () => switchTab('payments'));
   if (tabDataSheetBtn) tabDataSheetBtn.addEventListener('click', () => switchTab('datasheet'));
 
   if (toggleCameraBtn) toggleCameraBtn.addEventListener('click', toggleCamera);
@@ -702,10 +988,14 @@ function setupEventListeners() {
   if (refreshDataBtn) {
     refreshDataBtn.addEventListener('click', async () => {
       await loadStats();
+      await loadPayments();
       await loadDatasheet();
-      showAdminAlert('Datasheet refreshed from Supabase.', 'info');
+      showAdminAlert('Data and payment approvals refreshed from Supabase.', 'info');
     });
   }
+
+  if (paymentSearch) paymentSearch.addEventListener('input', renderPaymentsTable);
+  if (filterPaymentStatus) filterPaymentStatus.addEventListener('change', renderPaymentsTable);
 
   if (tableSearch) tableSearch.addEventListener('input', renderDatasheetTable);
   if (filterStatus) filterStatus.addEventListener('change', renderDatasheetTable);
@@ -721,7 +1011,7 @@ function setupEventListeners() {
         return;
       }
 
-      let csv = 'Enrollment ID,Name,Department,Year,Phone,Email,Registration Date,Attendance Status,Scanned Timestamp\n';
+      let csv = 'Enrollment/Ref ID,Name,Department/Company,Role/Year,Phone,Email,Amount Paid,UTR Number,Payment Status,Registration Date,Attendance Status,Scanned Timestamp\n';
       datasheetData.forEach(r => {
         const escape = (val) => `"${String(val || '').replace(/"/g, '""')}"`;
         csv += [
@@ -731,6 +1021,9 @@ function setupEventListeners() {
           escape(r.year),
           escape(r.phone),
           escape(r.email),
+          escape(r.amount_paid || 0),
+          escape(r.utr_number || 'N/A'),
+          escape(r.payment_status || 'approved'),
           escape(r.registered_at),
           escape(r.attendance_status),
           escape(r.scanned_at || 'N/A')

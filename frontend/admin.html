@@ -151,6 +151,11 @@
             <i class="ph ph-camera text-sm"></i>
             <span>Ticket Scanner</span>
           </button>
+          <button id="tabPaymentsBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200">
+            <i class="ph ph-currency-inr text-sm"></i>
+            <span>Payment Approvals</span>
+            <span id="pendingPaymentsCountBadge" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-bold hidden">0</span>
+          </button>
           <button id="tabDataSheetBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200">
             <i class="ph ph-table text-sm"></i>
             <span>Data Sheet</span>
@@ -190,15 +195,21 @@
               <span class="p-4 text-center">Click "Start Camera" above to activate camera scanner</span>
             </div>
 
+            <!-- MANUAL ENTRY WITH TICKET ID OR ROLL/GUEST ID -->
             <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/80">
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">
-                Manual Entry / Barcode Scanner Input:
-              </label>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center space-x-1.5">
+                  <i class="ph-bold ph-keyboard text-xs text-indigo-500"></i>
+                  <span>Manual Entry with Ticket ID / Roll No</span>
+                </label>
+                <span class="text-[10px] text-zinc-400">Ticket Token or Roll/Guest ID</span>
+              </div>
               <form id="manualScanForm" class="flex space-x-2">
-                <input type="text" id="manualInput" placeholder="Enrollment ID or Ticket Token"
-                       class="clean-input flex-1 px-3 py-2 rounded-lg text-xs uppercase font-mono">
-                <button type="submit" class="btn-secondary px-3 py-2 rounded-lg text-xs font-medium transition">
-                  Verify & Mark
+                <input type="text" id="manualInput" placeholder="e.g. TKT-B8123... or 22400768 or GST-..." required
+                       class="clean-input flex-1 px-3 py-2.5 rounded-lg text-xs font-mono uppercase tracking-wider">
+                <button type="submit" id="manualScanBtn" class="btn-primary px-4 py-2 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
+                  <i class="ph-bold ph-check"></i>
+                  <span>Check In</span>
                 </button>
               </form>
             </div>
@@ -232,7 +243,90 @@
 
       </div>
 
-      <!-- VIEW 2: LIVE ATTENDANCE DATA SHEET -->
+      <!-- VIEW 2: PAYMENT APPROVALS (UPI ₹500 VERIFICATION) -->
+      <div id="paymentsView" class="hidden space-y-3.5">
+        
+        <!-- Summary Cards for Payments -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="solid-card rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Total External Guests</p>
+              <h3 id="statGuestTotal" class="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mt-0.5">0</h3>
+            </div>
+            <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 text-sm">
+              <i class="ph ph-buildings"></i>
+            </div>
+          </div>
+
+          <div class="solid-card rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-amber-600 dark:text-amber-400">Pending UPI Verification</p>
+              <h3 id="statGuestPending" class="text-xl font-semibold text-amber-600 dark:text-amber-400 mt-0.5">0</h3>
+            </div>
+            <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-900/60 flex items-center justify-center text-amber-600 text-sm">
+              <i class="ph ph-hourglass-high"></i>
+            </div>
+          </div>
+
+          <div class="solid-card rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <p class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Approved Payments</p>
+              <h3 id="statGuestApproved" class="text-xl font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">0</h3>
+            </div>
+            <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-600 text-sm">
+              <i class="ph ph-check-circle"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Payments Filter Bar -->
+        <div class="solid-card rounded-xl p-3 flex flex-col md:flex-row gap-2.5 items-center justify-between">
+          <div class="relative w-full md:w-72">
+            <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-400 text-xs"></i>
+            <input type="text" id="paymentSearch" placeholder="Search by name, company, or UTR..."
+                   class="clean-input w-full pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-400">
+          </div>
+
+          <div class="flex items-center gap-2 w-full md:w-auto">
+            <select id="filterPaymentStatus" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
+              <option value="ALL">All Payments</option>
+              <option value="pending_verification" selected>Pending Verification Only</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Payments Table -->
+        <div class="solid-card rounded-xl overflow-hidden">
+          <div class="overflow-x-auto max-h-[600px]">
+            <table class="w-full text-left text-xs custom-table">
+              <thead>
+                <tr>
+                  <th class="py-2.5 px-3.5">Guest ID</th>
+                  <th class="py-2.5 px-3.5">Attendee</th>
+                  <th class="py-2.5 px-3.5">Company</th>
+                  <th class="py-2.5 px-3.5">Contact</th>
+                  <th class="py-2.5 px-3.5">Submitted 12-Digit UTR</th>
+                  <th class="py-2.5 px-3.5 text-center">Amount</th>
+                  <th class="py-2.5 px-3.5">Status</th>
+                  <th class="py-2.5 px-3.5 text-center">Verification Action</th>
+                </tr>
+              </thead>
+              <tbody id="paymentsBody" class="divide-y divide-zinc-200 dark:divide-zinc-800/60 text-zinc-700 dark:text-zinc-300">
+                <tr>
+                  <td colspan="8" class="text-center py-8 text-zinc-500">
+                    Loading guest payments...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- VIEW 3: LIVE ATTENDANCE DATA SHEET -->
       <div id="datasheetView" class="hidden space-y-3.5">
         
         <!-- Search and Filters Bar -->
@@ -258,12 +352,13 @@
 
             <!-- Filter Year -->
             <select id="filterYear" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
-              <option value="ALL">All Years</option>
+              <option value="ALL">All Years / Roles</option>
               <option value="1">Year 1</option>
               <option value="2">Year 2</option>
               <option value="3">Year 3</option>
               <option value="4">Year 4</option>
-              <option value="5">Year 5</option>
+              <option value="Faculty">Faculty</option>
+              <option value="Guest">Guest</option>
             </select>
           </div>
         </div>
@@ -274,9 +369,18 @@
             <table class="w-full text-left text-xs custom-table">
               <thead>
                 <tr>
-                  <th class="py-2.5 px-3.5">Enrollment ID</th>
+                  <th class="py-2.5 px-3.5">Enrollment / Ref ID</th>
                   <th class="py-2.5 px-3.5">Name</th>
-                  <th class="py-2.5 px-3.5">Department</th>
+                  <th class="py-2.5 px-3.5">Dept / Company</th>
+                  <th class="py-2.5 px-3.5 text-center">Year / Role</th>
+                  <th class="py-2.5 px-3.5">Phone</th>
+                  <th class="py-2.5 px-3.5">Email</th>
+                  <th class="py-2.5 px-3.5">Payment</th>
+                  <th class="py-2.5 px-3.5">Attendance</th>
+                  <th class="py-2.5 px-3.5">Scanned Time</th>
+                  <th class="py-2.5 px-3.5 text-center">Action</th>
+                </tr>
+              </thead>
                   <th class="py-2.5 px-3.5 text-center">Year</th>
                   <th class="py-2.5 px-3.5">Phone</th>
                   <th class="py-2.5 px-3.5">Email</th>

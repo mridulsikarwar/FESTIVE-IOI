@@ -122,11 +122,13 @@ class GoogleAuthRequest(BaseModel):
     demoUser: Optional[dict] = None
 
 class StudentRegisterRequest(BaseModel):
-    enrollment_id: str
+    enrollment_id: Optional[str] = None
     name: str
-    department: str
-    year: int
+    department: Optional[str] = None
+    year: Optional[str] = None
     phone: str
+    company: Optional[str] = None
+    utr_number: Optional[str] = None
 
 class AdminLoginRequest(BaseModel):
     password: str
@@ -175,25 +177,22 @@ def auth_google(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     else:
         raise HTTPException(status_code=400, detail="Missing credential or token.")
 
-    # ENFORCE DOMAIN RESTRICTION
+    # Determine domain & user type
     if "@" not in email:
         raise HTTPException(status_code=400, detail="Invalid email address.")
     user_domain = email.split("@")[1]
-    if ALLOWED_DOMAINS and "*" not in ALLOWED_DOMAINS and user_domain not in ALLOWED_DOMAINS:
-        allowed_str = " or ".join(["@" + d for d in ALLOWED_DOMAINS])
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Domain Restriction: Only email addresses ending with {allowed_str} are permitted. (Received: {email})"
-        )
+    is_pw_member = bool(ALLOWED_DOMAINS and user_domain in ALLOWED_DOMAINS)
+    user_type = "pw_member" if is_pw_member else "guest"
 
-    # Check existing student in Cloud DB
+    # Check existing attendee in Cloud DB
     student = db.query(Student).filter(Student.email == email).first()
 
     token = create_jwt({
         "email": email,
         "name": name,
         "google_id": google_id,
-        "role": "student"
+        "role": "student",
+        "user_type": user_type
     })
 
     return {
@@ -201,6 +200,7 @@ def auth_google(req: GoogleAuthRequest, db: Session = Depends(get_db)):
         "token": token,
         "email": email,
         "name": name,
+        "user_type": user_type,
         "isRegistered": student is not None,
         "student": student.to_dict() if student else None
     }
@@ -233,7 +233,10 @@ def register_student(
     db: Session = Depends(get_db)
 ):
     email = auth["email"]
-    clean_enrollment = body.enrollment_id.strip().upper()
+    user_type = auth.get("user_type", "pw_member")
+    clean_enrollment = (body.enrollment_id or "").strip().upper()
+    if not clean_enrollment:
+        clean_enrollment = f"GST-{secrets.token_hex(3).upper()}"
     clean_phone = body.phone.strip()
 
     # Validate duplicate enrollment ID (Primary Key)
@@ -248,18 +251,29 @@ def register_student(
     if db.query(Student).filter(Student.phone == clean_phone).first():
         raise HTTPException(status_code=400, detail="This phone number is already registered.")
 
+    # Validate UTR if guest
+    if user_type == "guest" and body.utr_number:
+        clean_utr = body.utr_number.strip()
+        if db.query(Student).filter(Student.utr_number == clean_utr).first():
+            raise HTTPException(status_code=400, detail="This 12-digit UTR has already been submitted.")
+
     # Generate cryptographically secure ticket token
     ticket_token = f"TKT-{secrets.token_hex(8).upper()}"
 
     new_student = Student(
         enrollment_id=clean_enrollment,
         name=body.name.strip(),
-        department=body.department.strip(),
-        year=body.year,
+        department=body.department.strip() if body.department else ("External Guest" if user_type == "guest" else "General"),
+        year=str(body.year) if body.year else ("Guest" if user_type == "guest" else "Faculty"),
         phone=clean_phone,
         email=email,
         google_id=auth.get("google_id"),
-        ticket_token=ticket_token
+        ticket_token=ticket_token,
+        user_type=user_type,
+        company=body.company.strip() if body.company else None,
+        amount_paid=500 if user_type == "guest" else 0,
+        utr_number=body.utr_number.strip() if body.utr_number else None,
+        payment_status="pending_verification" if user_type == "guest" else "approved"
     )
 
     db.add(new_student)
@@ -289,6 +303,21 @@ def admin_login(body: AdminLoginRequest):
 
     token = create_jwt({"role": "admin", "user": "Staff Admin"}, expires_hours=24)
     return {"success": True, "token": token}
+
+# 1-Click Payment Approval for External Guests
+@app.post("/api/admin/verify-payment/{enrollment_id}")
+def verify_payment(
+    enrollment_id: str,
+    admin: dict = Depends(verify_admin_token),
+    db: Session = Depends(get_db)
+):
+    student = db.query(Student).filter(Student.enrollment_id == enrollment_id.strip().upper()).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Attendee record not found.")
+
+    student.payment_status = "approved"
+    db.commit()
+    return {"success": True, "message": f"Payment for {student.enrollment_id} approved.", "student": student.to_dict()}
 
 # CRITICAL RULE: Once a ticket is scanned, it CANNOT be scanned again!
 @app.post("/api/admin/scan-ticket")
@@ -324,7 +353,19 @@ def scan_ticket(
     if not student:
         raise HTTPException(
             status_code=404,
-            detail="Invalid Ticket! No matching student record found in cloud database."
+            detail="Invalid Ticket! No matching attendee record found in cloud database."
+        )
+
+    # CHECK PAYMENT STATUS
+    if student.payment_status == "pending_verification":
+        raise HTTPException(
+            status_code=400,
+            detail=f"⚠️ PAYMENT PENDING: Attendee's ₹500 payment (UTR: {student.utr_number or 'N/A'}) has not been verified yet."
+        )
+    if student.payment_status == "rejected":
+        raise HTTPException(
+            status_code=403,
+            detail="⚠️ PAYMENT REJECTED: The payment submission for this pass was rejected."
         )
 
     # CHECK IF TICKET HAS ALREADY BEEN SCANNED
@@ -369,6 +410,17 @@ def scan_ticket(
         "scannedAt": scan_time.isoformat(),
         "message": f"✅ TICKET VERIFIED! Welcome, {student.name}!"
     }
+    student_data["attendance_status"] = "Present"
+    student_data["scanned_at"] = scan_time.isoformat()
+
+    return {
+        "success": True,
+        "alreadyScanned": False,
+        "status": "VERIFIED",
+        "student": student_data,
+        "scannedAt": scan_time.isoformat(),
+        "message": f"✅ TICKET VERIFIED! Welcome, {student.name}!"
+    }
 
 @app.get("/api/admin/datasheet")
 def get_datasheet(admin: dict = Depends(verify_admin_token), db: Session = Depends(get_db)):
@@ -397,18 +449,22 @@ def export_csv(admin: dict = Depends(verify_admin_token), db: Session = Depends(
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Enrollment ID", "Name", "Department", "Year", "Phone",
-        "Email", "Registration Date", "Attendance Status", "Scanned Timestamp"
+        "Enrollment/Ref ID", "Name", "Department/Company", "Role/Year", "Phone",
+        "Email", "Fee Paid", "UTR Number", "Payment Status",
+        "Registration Date", "Attendance Status", "Scanned Timestamp"
     ])
 
     for s in students:
         writer.writerow([
             s.enrollment_id,
             s.name,
-            s.department,
+            s.company if s.company else s.department,
             s.year,
             s.phone,
             s.email,
+            float(s.amount_paid) if s.amount_paid is not None else 0,
+            s.utr_number or "N/A",
+            s.payment_status or "approved",
             s.registered_at.strftime("%Y-%m-%d %H:%M:%S") if s.registered_at else "",
             "Present" if s.attendance else "Not Scanned",
             s.attendance.scanned_at.strftime("%Y-%m-%d %H:%M:%S") if s.attendance else "N/A"

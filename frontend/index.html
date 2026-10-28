@@ -109,96 +109,276 @@
         <!-- Inline Auth Error Display -->
         <div id="googleAuthError" class="hidden p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-700 dark:text-rose-300 text-left"></div>
 
-        <p class="text-[11px] text-zinc-500 dark:text-zinc-500 pt-1">
-          Authorized domains: <span class="allowedDomainSpan font-medium text-zinc-700 dark:text-zinc-300">@pwioi.com or @pw.live</span>
+        <p class="text-[11px] text-zinc-500 dark:text-zinc-400 pt-1 space-y-0.5">
+          <span class="block font-medium text-emerald-600 dark:text-emerald-400">PW Community (@pwioi.com or @pw.live): Free Pass</span>
+          <span class="block text-zinc-500 dark:text-zinc-400">External Attendees (Other Emails): ₹500 Registration</span>
         </p>
       </div>
 
     </div>
 
-    <!-- STEP 2: REGISTRATION FORM -->
-    <div id="regSection" class="hidden w-full max-w-md solid-card rounded-xl p-6 sm:p-7">
-      <div class="pb-3.5 mb-4 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between">
-        <div>
-          <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">Complete Registration</h2>
-          <p class="text-zinc-500 dark:text-zinc-400 text-xs mt-0.5">Enter your academic details to generate your pass.</p>
+    <!-- STEP 2: REGISTRATION SECTION -->
+    <div id="regSection" class="hidden w-full max-w-md">
+
+      <!-- 2A: PW COMMUNITY REGISTRATION (Free) -->
+      <div id="pwRegContainer" class="hidden solid-card rounded-xl p-6 sm:p-7">
+        <div class="pb-3.5 mb-4 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">Academic Registration</h2>
+            <p class="text-zinc-500 dark:text-zinc-400 text-xs mt-0.5">Enter your academic details to generate your event pass.</p>
+          </div>
+          <span class="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/50 px-2 py-0.5 rounded font-medium">PW Member (Free)</span>
         </div>
-        <span class="text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/50 px-2 py-0.5 rounded font-medium">Verified</span>
+
+        <form id="pwRegistrationForm" class="space-y-3.5">
+          <!-- Enrollment ID -->
+          <div>
+            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              Enrollment ID / Roll No <span class="text-rose-500">*</span>
+            </label>
+            <input type="text" id="regEnrollmentId" required placeholder="e.g. 22400768 or 0801CS221045"
+                   class="clean-input w-full px-3 py-2 rounded-lg text-xs uppercase font-mono tracking-wider placeholder-zinc-400 dark:placeholder-zinc-600">
+          </div>
+
+          <!-- Student Name & Year -->
+          <div class="grid grid-cols-3 gap-2.5">
+            <div class="col-span-2">
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Full Name <span class="text-rose-500">*</span>
+              </label>
+              <input type="text" id="regName" required placeholder="Full Name"
+                     class="clean-input w-full px-3 py-2 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-600">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Year / Role <span class="text-rose-500">*</span>
+              </label>
+              <select id="regYear" required class="clean-input w-full px-2 py-2 rounded-lg text-xs">
+                <option value="1">1st Year</option>
+                <option value="2">2nd Year</option>
+                <option value="3" selected>3rd Year</option>
+                <option value="4">4th Year</option>
+                <option value="Faculty">Faculty</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Department -->
+          <div>
+            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              Department <span class="text-rose-500">*</span>
+            </label>
+            <select id="regDepartment" required class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+              <option value="">Select department</option>
+            </select>
+          </div>
+
+          <!-- Phone & Readonly Email -->
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Phone Number <span class="text-rose-500">*</span>
+              </label>
+              <input type="tel" id="regPhone" required placeholder="10-digit number"
+                     class="clean-input w-full px-3 py-2 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-600">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Account Email
+              </label>
+              <input type="email" id="regEmail" readonly
+                     class="w-full px-3 py-2 rounded-lg text-xs bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 cursor-not-allowed">
+            </div>
+          </div>
+
+          <button type="submit" id="submitPwRegBtn"
+                  class="btn-primary w-full py-2.5 px-4 mt-2 rounded-lg font-medium text-xs transition flex items-center justify-center space-x-2">
+            <span>Generate Entry Pass</span>
+            <i class="ph-bold ph-arrow-right text-xs"></i>
+          </button>
+        </form>
       </div>
 
-      <form id="registrationForm" class="space-y-3.5">
-        <!-- Enrollment ID -->
-        <div>
-          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-            Enrollment ID <span class="text-rose-500">*</span>
-          </label>
-          <input type="text" id="regEnrollmentId" required placeholder="e.g. 0801CS221045"
-                 class="clean-input w-full px-3 py-2 rounded-lg text-xs uppercase font-mono tracking-wider placeholder-zinc-400 dark:placeholder-zinc-600">
+      <!-- 2B: EXTERNAL ATTENDEE REGISTRATION (₹500 Manual UPI) -->
+      <div id="guestRegContainer" class="hidden solid-card rounded-xl p-6 sm:p-7 space-y-4">
+        <div class="pb-3 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">External Attendee Registration</h2>
+            <p class="text-zinc-500 dark:text-zinc-400 text-xs mt-0.5">Summit pass &bull; 100% verified gate entry.</p>
+          </div>
+          <span class="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/50 px-2 py-0.5 rounded font-medium">Fee: ₹500</span>
         </div>
 
-        <!-- Student Name & Year -->
-        <div class="grid grid-cols-3 gap-2.5">
-          <div class="col-span-2">
+        <form id="guestRegistrationForm" class="space-y-3.5">
+          <!-- Full Name -->
+          <div>
             <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Full Name <span class="text-rose-500">*</span>
             </label>
-            <input type="text" id="regName" required placeholder="Full Name"
+            <input type="text" id="guestName" required placeholder="Full Name"
                    class="clean-input w-full px-3 py-2 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-600">
           </div>
 
+          <!-- Phone & Email -->
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Phone Number <span class="text-rose-500">*</span>
+              </label>
+              <input type="tel" id="guestPhone" required placeholder="10-digit number"
+                     class="clean-input w-full px-3 py-2 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-600">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Account Email
+              </label>
+              <input type="email" id="guestEmail" readonly
+                     class="w-full px-3 py-2 rounded-lg text-xs bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 cursor-not-allowed">
+            </div>
+          </div>
+
+          <!-- Company Dropdown -->
           <div>
             <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Year <span class="text-rose-500">*</span>
+              Company / Organization <span class="text-rose-500">*</span>
             </label>
-            <select id="regYear" required class="clean-input w-full px-2 py-2 rounded-lg text-xs">
-              <option value="1">1st</option>
-              <option value="2">2nd</option>
-              <option value="3" selected>3rd</option>
-              <option value="4">4th</option>
-              <option value="5">5th</option>
+            <select id="guestCompanySelect" required class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+              <option value="">Select your organization</option>
+              <option value="UpGrad">UpGrad</option>
+              <option value="News nation">News nation</option>
+              <option value="Silver Spring">Silver Spring</option>
+              <option value="Others">Others</option>
             </select>
           </div>
-        </div>
 
-        <!-- Department -->
-        <div>
-          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-            Department <span class="text-rose-500">*</span>
-          </label>
-          <select id="regDepartment" required class="clean-input w-full px-3 py-2 rounded-lg text-xs">
-            <option value="">Select department</option>
-          </select>
-        </div>
-
-        <!-- Phone & Readonly Email -->
-        <div class="grid grid-cols-2 gap-2.5">
-          <div>
+          <!-- Custom Company (visible if Others selected) -->
+          <div id="guestCustomCompanyDiv" class="hidden">
             <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Phone Number <span class="text-rose-500">*</span>
+              Specify Company / Institute Name <span class="text-rose-500">*</span>
             </label>
-            <input type="tel" id="regPhone" required placeholder="10-digit number"
+            <input type="text" id="guestCustomCompany" placeholder="Enter company name"
                    class="clean-input w-full px-3 py-2 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-600">
           </div>
 
-          <div>
-            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Account Email
-            </label>
-            <input type="email" id="regEmail" readonly
-                   class="w-full px-3 py-2 rounded-lg text-xs bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 cursor-not-allowed">
+          <!-- UPI PAYMENT SECTION -->
+          <div class="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800">
+              <div class="flex items-center space-x-2">
+                <i class="ph ph-qr-code text-indigo-500 text-base"></i>
+                <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">UPI Payment</span>
+              </div>
+              <span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">₹500.00</span>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center gap-3">
+              <!-- Dynamic UPI QR -->
+              <div class="p-2 bg-white rounded-lg border border-zinc-200 shadow-sm flex-shrink-0">
+                <div id="guestUpiQr" class="w-28 h-28 flex items-center justify-center"></div>
+              </div>
+
+              <!-- Payment Details & Mobile Button -->
+              <div class="flex-1 space-y-2 text-center sm:text-left w-full">
+                <div>
+                  <p class="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase font-medium">Payee UPI ID</p>
+                  <div class="flex items-center justify-center sm:justify-start space-x-1.5 mt-0.5">
+                    <span id="displayUpiId" class="font-mono text-xs font-bold text-zinc-800 dark:text-zinc-200 select-all">payalyadav210106@okaxis</span>
+                    <button type="button" id="copyUpiBtn" title="Copy UPI ID" class="p-1 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition">
+                      <i class="ph ph-copy text-xs"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Deep link for Mobile UPI Apps -->
+                <a id="guestUpiIntentLink" href="#" target="_blank"
+                   class="inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto shadow-sm transition">
+                  <i class="ph-bold ph-device-mobile"></i>
+                  <span>Pay ₹500 via UPI App</span>
+                </a>
+                <p class="text-[10px] text-zinc-500 dark:text-zinc-400">Scan QR or open in GPay, PhonePe, Paytm</p>
+              </div>
+            </div>
+
+            <!-- UTR / Reference Number Input -->
+            <div class="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                12-Digit UPI Transaction ID / UTR <span class="text-rose-500">*</span>
+              </label>
+              <input type="text" id="guestUtr" required maxlength="12" pattern="\d{12}" placeholder="e.g. 428912345678"
+                     class="clean-input w-full px-3 py-2 rounded-lg text-xs font-mono tracking-widest placeholder-zinc-400 dark:placeholder-zinc-600">
+              <p class="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
+                Enter the 12-digit UTR/Ref number shown on your UPI payment confirmation screen.
+              </p>
+            </div>
+          </div>
+
+          <button type="submit" id="submitGuestRegBtn"
+                  class="btn-primary w-full py-2.5 px-4 mt-2 rounded-lg font-medium text-xs transition flex items-center justify-center space-x-2">
+            <span>Submit Registration & Verify Payment</span>
+            <i class="ph-bold ph-arrow-right text-xs"></i>
+          </button>
+        </form>
+      </div>
+
+    </div>
+
+    <!-- STEP 3: TICKET & VERIFICATION DISPLAY -->
+    <div id="ticketSection" class="hidden w-full max-w-sm">
+
+      <!-- 3A: PENDING ADMIN VERIFICATION CARD (for Guests with unverified UPI) -->
+      <div id="pendingVerificationCard" class="hidden solid-card rounded-xl p-6 text-center space-y-4">
+        <div class="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 flex items-center justify-center text-2xl mx-auto shadow-sm">
+          <i class="ph-bold ph-hourglass-high animate-pulse"></i>
+        </div>
+
+        <div>
+          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 uppercase tracking-wider inline-block mb-1.5">
+            Verification In Progress
+          </span>
+          <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">Payment Under Review</h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-xs mx-auto">
+            Your ₹500 UPI payment submission has been received. Our gate admin team is verifying your 12-digit UTR.
+          </p>
+        </div>
+
+        <!-- Submission details grid -->
+        <div class="p-3.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 text-left text-xs space-y-2">
+          <div class="flex justify-between">
+            <span class="text-zinc-500">Attendee:</span>
+            <span id="pendingName" class="font-semibold text-zinc-900 dark:text-zinc-100"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-zinc-500">Organization:</span>
+            <span id="pendingCompany" class="font-medium text-zinc-800 dark:text-zinc-200"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-zinc-500">Submitted UTR:</span>
+            <span id="pendingUtr" class="font-mono font-bold text-indigo-600 dark:text-indigo-400"></span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-zinc-500">Amount:</span>
+            <span class="font-semibold text-emerald-600 dark:text-emerald-400">₹500.00</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-zinc-500">Pass Reference:</span>
+            <span id="pendingRefId" class="font-mono text-zinc-700 dark:text-zinc-300"></span>
           </div>
         </div>
 
-        <button type="submit" id="submitRegBtn"
-                class="btn-primary w-full py-2.5 px-4 mt-2 rounded-lg font-medium text-xs transition flex items-center justify-center space-x-2">
-          <span>Generate Entry Pass</span>
-          <i class="ph-bold ph-arrow-right text-xs"></i>
-        </button>
-      </form>
-    </div>
+        <p class="text-[11px] text-zinc-500 dark:text-zinc-400 italic">
+          Your official gate entry QR pass will appear here automatically as soon as verified.
+        </p>
 
-    <!-- STEP 3: TICKET QR DISPLAY -->
-    <div id="ticketSection" class="hidden w-full max-w-sm">
+        <button type="button" id="refreshPendingStatusBtn" class="btn-primary w-full py-2 px-3 rounded-lg text-xs font-medium transition flex items-center justify-center space-x-1.5">
+          <i class="ph ph-arrows-clockwise text-xs"></i>
+          <span>Check Approval Status</span>
+        </button>
+      </div>
+      
+      <!-- 3B: APPROVED ENTRY PASS (QR Ticket) -->
+      <div id="approvedTicketCard" class="hidden">
       
       <!-- Printable Ticket Area -->
       <div id="printable-ticket" class="ticket-container p-5">
@@ -263,7 +443,8 @@
           <span>Refresh</span>
         </button>
       </div>
-    </div>
+      </div> <!-- /approvedTicketCard -->
+    </div> <!-- /ticketSection -->
 
   </main>
 

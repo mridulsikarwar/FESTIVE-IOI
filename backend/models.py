@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, BigInteger, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Integer, BigInteger, Numeric, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -22,15 +22,20 @@ class Department(Base):
 class Student(Base):
     __tablename__ = "students"
 
-    enrollment_id = Column(String(50), primary_key=True, index=True) # PRIMARY KEY
+    enrollment_id = Column(String(50), primary_key=True, index=True) # PRIMARY KEY (Roll No or GST-XXXX)
     name = Column(String(100), nullable=False)
-    department = Column(String(100), nullable=False)
-    year = Column(Integer, nullable=False)
+    department = Column(String(100), nullable=True)
+    year = Column(String(20), nullable=True)
     phone = Column(String(20), nullable=False, unique=True, index=True)
     email = Column(String(100), nullable=False, unique=True, index=True)
     google_id = Column(String(100), nullable=True)
     ticket_token = Column(String(100), nullable=False, unique=True, index=True)
     registered_at = Column(DateTime, default=datetime.utcnow)
+    user_type = Column(String(20), default="pw_member") # pw_member | guest
+    company = Column(String(100), nullable=True) # UpGrad, News nation, Silver Spring, Others
+    amount_paid = Column(Numeric, default=0)
+    utr_number = Column(String(50), nullable=True)
+    payment_status = Column(String(20), default="approved") # approved | pending_verification
 
     # 1-to-1 relationship with attendance check-in
     attendance = relationship("Attendance", back_populates="student", uselist=False, cascade="all, delete-orphan")
@@ -39,11 +44,16 @@ class Student(Base):
         return {
             "enrollment_id": self.enrollment_id,
             "name": self.name,
-            "department": self.department,
-            "year": self.year,
+            "department": self.department or "External Attendee",
+            "year": self.year or "N/A",
             "phone": self.phone,
             "email": self.email,
             "ticket_token": self.ticket_token,
+            "user_type": self.user_type,
+            "company": self.company,
+            "amount_paid": float(self.amount_paid) if self.amount_paid is not None else 0,
+            "utr_number": self.utr_number,
+            "payment_status": self.payment_status,
             "registered_at": self.registered_at.isoformat() if self.registered_at else None,
             "attendance_status": "Present" if self.attendance else "Not Scanned",
             "scanned_at": self.attendance.scanned_at.isoformat() if self.attendance else None

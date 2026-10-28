@@ -156,37 +156,7 @@ async function handleAuthenticatedUser(user) {
     return;
   }
 
-  // 1. Strict Domain Restriction Check
-  if (!isDomainAllowed(email)) {
-    const label = getAllowedDomainsLabel();
-    const errMsg = `Access Denied: Only accounts ending in ${label} are permitted.`;
-    console.warn(errMsg, "Signed in as:", email);
-    showAlert(`${errMsg} (Signed in as: ${email})`, 'error');
-
-    const errBox = document.getElementById('googleAuthError');
-    if (errBox) {
-      errBox.innerHTML = `
-        <div class="space-y-1">
-          <p class="font-bold text-rose-300">❌ Access Denied: Unauthorized Domain</p>
-          <p>Only accounts ending in <strong>${label}</strong> are permitted.</p>
-          <p class="text-[11px] text-slate-300">You signed in with: <code class="text-rose-200 bg-rose-900/50 px-1 py-0.5 rounded">${email}</code></p>
-          <p class="text-[11px] text-slate-400 mt-1">Please sign out from Google or choose your @pwioi.com / @pw.live account.</p>
-        </div>
-      `;
-      errBox.classList.remove('hidden');
-    }
-
-    if (supabase) {
-      try { await supabase.auth.signOut(); } catch (e) {}
-    }
-    localStorage.removeItem('student_email');
-    localStorage.removeItem('student_name');
-    updateHeaderUser(null);
-    showSection('auth');
-    return;
-  }
-
-  // 2. Persist locally
+  // 1. Persist locally
   localStorage.setItem('student_email', email);
   localStorage.setItem('student_name', name);
   updateHeaderUser(name);
@@ -199,7 +169,7 @@ async function handleAuthenticatedUser(user) {
     history.replaceState(null, '', window.location.pathname);
   }
 
-  // 3. Check if student already exists in Supabase
+  // 2. Check if student / guest already exists in Supabase
   await loadStudentProfile(email, name);
 }
 
@@ -215,19 +185,21 @@ async function loadStudentProfile(email, name) {
     if (error) throw error;
 
     if (student) {
-      // In PostgREST, related tables are returned as an array [] (which is truthy in JS!)
-      // Must check length > 0 to determine if ticket was actually scanned at gate
+      currentStudent = student;
       const isScanned = Array.isArray(student.attendance) ? student.attendance.length > 0 : !!student.attendance;
       const scanRecord = Array.isArray(student.attendance) ? student.attendance[0] : student.attendance;
+      currentStudent.attendance_status = isScanned ? 'Present' : 'Pending';
+      currentStudent.scanned_at = isScanned && scanRecord ? scanRecord.scanned_at : null;
 
-      currentStudent = {
-        ...student,
-        attendance_status: isScanned ? 'Present' : 'Pending',
-        scanned_at: isScanned && scanRecord ? scanRecord.scanned_at : null
-      };
-      await renderTicket(currentStudent);
+      // Check Payment Verification Status
+      if (student.payment_status === 'pending_verification') {
+        showPendingVerification(currentStudent);
+      } else {
+        await renderTicket(currentStudent);
+        showApprovedTicket();
+      }
       showSection('ticket');
-      subscribeToAttendanceUpdates(student.enrollment_id);
+      subscribeToStudentUpdates(student.enrollment_id);
     } else {
       showRegistrationForm(email, name);
     }
@@ -385,29 +357,100 @@ function initGoogleGis() {
   }
 }
 
-// Show Registration Form
+// Show Registration Form (PW Community vs External Guest)
 function showRegistrationForm(email, name) {
-  document.getElementById('regEmail').value = email;
-  document.getElementById('regName').value = name;
+  const isPw = isDomainAllowed(email);
+  const pwContainer = document.getElementById('pwRegContainer');
+  const guestContainer = document.getElementById('guestRegContainer');
+
+  if (isPw) {
+    if (pwContainer) pwContainer.classList.remove('hidden');
+    if (guestContainer) guestContainer.classList.add('hidden');
+    const emailInput = document.getElementById('regEmail');
+    const nameInput = document.getElementById('regName');
+    if (emailInput) emailInput.value = email;
+    if (nameInput) nameInput.value = name;
+  } else {
+    if (guestContainer) guestContainer.classList.remove('hidden');
+    if (pwContainer) pwContainer.classList.add('hidden');
+    const guestEmailInput = document.getElementById('guestEmail');
+    const guestNameInput = document.getElementById('guestName');
+    if (guestEmailInput) guestEmailInput.value = email;
+    if (guestNameInput) guestNameInput.value = name;
+
+    // Render dynamic UPI QR code for ₹500
+    const upiId = APP_CONFIG.upiId || 'payalyadav210106@okaxis';
+    const payeeName = encodeURIComponent(APP_CONFIG.upiPayeeName || 'FESTIVE IOI');
+    const upiUri = `upi://pay?pa=${upiId}&pn=${payeeName}&am=500&cu=INR&tn=FESTIVE-GUEST`;
+    renderGuestUpiQr(upiUri);
+    const intentLink = document.getElementById('guestUpiIntentLink');
+    if (intentLink) intentLink.href = upiUri;
+  }
+
   showSection('reg');
 }
 
-// Handle Student Event Registration in Supabase
-async function handleRegistration(e) {
+// Render dynamic UPI QR in guest form
+function renderGuestUpiQr(uri) {
+  const qrBox = document.getElementById('guestUpiQr');
+  if (!qrBox) return;
+  qrBox.innerHTML = '';
+  try {
+    new QRCode(qrBox, {
+      text: uri,
+      width: 112,
+      height: 112,
+      colorDark: "#1e1b4b",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch (e) {
+    console.warn("QR render error:", e);
+  }
+}
+
+// Show Pending Verification Card
+function showPendingVerification(student) {
+  const pName = document.getElementById('pendingName');
+  const pComp = document.getElementById('pendingCompany');
+  const pUtr = document.getElementById('pendingUtr');
+  const pRef = document.getElementById('pendingRefId');
+
+  if (pName) pName.textContent = student.name;
+  if (pComp) pComp.textContent = student.company || 'External Guest';
+  if (pUtr) pUtr.textContent = student.utr_number || 'Under Review';
+  if (pRef) pRef.textContent = student.enrollment_id;
+
+  const pendingCard = document.getElementById('pendingVerificationCard');
+  const approvedCard = document.getElementById('approvedTicketCard');
+  if (pendingCard) pendingCard.classList.remove('hidden');
+  if (approvedCard) approvedCard.classList.add('hidden');
+}
+
+// Show Approved Ticket Card
+function showApprovedTicket() {
+  const pendingCard = document.getElementById('pendingVerificationCard');
+  const approvedCard = document.getElementById('approvedTicketCard');
+  if (pendingCard) pendingCard.classList.add('hidden');
+  if (approvedCard) approvedCard.classList.remove('hidden');
+}
+
+// Handle PW Student / Faculty Registration (Free)
+async function handlePwRegistration(e) {
   e.preventDefault();
   const email = localStorage.getItem('student_email') || document.getElementById('regEmail').value.trim();
   const enrollment_id = document.getElementById('regEnrollmentId').value.trim().toUpperCase();
   const name = document.getElementById('regName').value.trim();
   const department = document.getElementById('regDepartment').value;
-  const year = parseInt(document.getElementById('regYear').value, 10);
+  const year = document.getElementById('regYear').value;
   const phone = document.getElementById('regPhone').value.trim();
 
-  const submitBtn = document.getElementById('submitRegBtn');
+  const submitBtn = document.getElementById('submitPwRegBtn');
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Registering in Cloud DB...</span>';
 
   try {
-    // 1. Check duplicate enrollment ID (Primary Key)
+    // 1. Check duplicate enrollment ID
     const { data: dupId } = await supabase
       .from('students')
       .select('enrollment_id')
@@ -416,7 +459,7 @@ async function handleRegistration(e) {
 
     if (dupId) {
       showAlert(`Enrollment ID '${enrollment_id}' is already registered!`, 'error');
-      resetSubmitBtn(submitBtn);
+      resetPwSubmitBtn(submitBtn);
       return;
     }
 
@@ -429,7 +472,7 @@ async function handleRegistration(e) {
 
     if (dupPhone) {
       showAlert(`Phone number '${phone}' is already registered!`, 'error');
-      resetSubmitBtn(submitBtn);
+      resetPwSubmitBtn(submitBtn);
       return;
     }
 
@@ -437,7 +480,7 @@ async function handleRegistration(e) {
     const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
     const ticketToken = `TKT-${randomHex}`;
 
-    // 4. Insert into Supabase 'students' table
+    // 4. Insert into Supabase
     const { data: newStudent, error: insertError } = await supabase
       .from('students')
       .insert({
@@ -447,6 +490,11 @@ async function handleRegistration(e) {
         year,
         phone,
         email,
+        user_type: 'pw_member',
+        company: null,
+        amount_paid: 0,
+        utr_number: null,
+        payment_status: 'approved',
         ticket_token: ticketToken,
         registered_at: new Date().toISOString()
       })
@@ -455,7 +503,6 @@ async function handleRegistration(e) {
 
     if (insertError) throw insertError;
 
-    // 5. Trigger celebratory confetti!
     if (window.confetti) {
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
     }
@@ -467,20 +514,125 @@ async function handleRegistration(e) {
     };
 
     await renderTicket(currentStudent);
+    showApprovedTicket();
     showSection('ticket');
-    subscribeToAttendanceUpdates(newStudent.enrollment_id);
-    showAlert('🎉 Registration complete! Here is your entry pass.', 'success');
+    subscribeToStudentUpdates(newStudent.enrollment_id);
+    showAlert('🎉 Registration complete! Here is your official entry pass.', 'success');
   } catch (err) {
-    console.error('Registration error:', err);
+    console.error('PW Registration error:', err);
     showAlert('Registration error: ' + (err.message || 'Database error'), 'error');
   } finally {
-    resetSubmitBtn(submitBtn);
+    resetPwSubmitBtn(submitBtn);
   }
 }
 
-function resetSubmitBtn(btn) {
+function resetPwSubmitBtn(btn) {
+  if (!btn) return;
   btn.disabled = false;
-  btn.innerHTML = '<i class="ph-bold ph-qr-code text-lg"></i><span>Complete Registration & Generate Ticket</span>';
+  btn.innerHTML = '<span>Generate Entry Pass</span><i class="ph-bold ph-arrow-right text-xs"></i>';
+}
+
+// Handle External Attendee (Guest) Registration (₹500 Manual UPI)
+async function handleGuestRegistration(e) {
+  e.preventDefault();
+  const email = localStorage.getItem('student_email') || document.getElementById('guestEmail').value.trim();
+  const name = document.getElementById('guestName').value.trim();
+  const phone = document.getElementById('guestPhone').value.trim();
+  const companySelect = document.getElementById('guestCompanySelect').value;
+  let company = companySelect;
+  if (companySelect === 'Others') {
+    company = document.getElementById('guestCustomCompany').value.trim() || 'Others';
+  }
+
+  const utr = document.getElementById('guestUtr').value.trim();
+
+  // Validate UTR: 12 numeric digits
+  if (!/^\d{12}$/.test(utr)) {
+    showAlert('Please enter a valid 12-digit numeric UPI UTR / Reference number.', 'error');
+    return;
+  }
+
+  const submitBtn = document.getElementById('submitGuestRegBtn');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Submitting Registration & UTR...</span>';
+
+  try {
+    // 1. Check duplicate UTR
+    const { data: dupUtr } = await supabase
+      .from('students')
+      .select('enrollment_id, utr_number')
+      .eq('utr_number', utr)
+      .maybeSingle();
+
+    if (dupUtr) {
+      showAlert(`This 12-digit UTR (${utr}) has already been registered!`, 'error');
+      resetGuestSubmitBtn(submitBtn);
+      return;
+    }
+
+    // 2. Check duplicate phone
+    const { data: dupPhone } = await supabase
+      .from('students')
+      .select('phone')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    if (dupPhone) {
+      showAlert(`Phone number '${phone}' is already registered!`, 'error');
+      resetGuestSubmitBtn(submitBtn);
+      return;
+    }
+
+    // 3. Auto-generate Guest Enrollment ID & Ticket Token
+    const guestId = 'GST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const ticketToken = `TKT-${randomHex}`;
+
+    // 4. Insert into Supabase
+    const { data: newStudent, error: insertError } = await supabase
+      .from('students')
+      .insert({
+        enrollment_id: guestId,
+        name,
+        department: 'External Guest',
+        year: 'Guest',
+        phone,
+        email,
+        user_type: 'guest',
+        company,
+        amount_paid: 500,
+        utr_number: utr,
+        payment_status: 'pending_verification',
+        ticket_token: ticketToken,
+        registered_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
+    currentStudent = {
+      ...newStudent,
+      attendance_status: 'Pending',
+      scanned_at: null
+    };
+
+    showPendingVerification(currentStudent);
+    showSection('ticket');
+    subscribeToStudentUpdates(guestId);
+    showAlert('✅ Payment submitted! Your pass is pending admin approval.', 'success');
+  } catch (err) {
+    console.error('Guest Registration error:', err);
+    showAlert('Registration error: ' + (err.message || 'Database error'), 'error');
+  } finally {
+    resetGuestSubmitBtn(submitBtn);
+  }
+}
+
+function resetGuestSubmitBtn(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.innerHTML = '<span>Submit Registration & Verify Payment</span><i class="ph-bold ph-arrow-right text-xs"></i>';
 }
 
 // Generate QR Code using client-side QRCode generator
@@ -512,7 +664,16 @@ async function generateQrDataUrl(text) {
 async function renderTicket(student) {
   document.getElementById('tktName').textContent = student.name;
   document.getElementById('tktEnrollment').textContent = student.enrollment_id;
-  document.getElementById('tktDeptYear').textContent = `${student.department} (Year ${student.year})`;
+  
+  // Format Department / Organization & Year / Category
+  if (student.user_type === 'guest') {
+    document.getElementById('tktDeptYear').textContent = `${student.company || 'External'} (Guest Pass)`;
+  } else if (student.year === 'Faculty') {
+    document.getElementById('tktDeptYear').textContent = `${student.department} (Faculty)`;
+  } else {
+    document.getElementById('tktDeptYear').textContent = `${student.department} (Year ${student.year})`;
+  }
+
   document.getElementById('tktPhone').textContent = student.phone;
   document.getElementById('tktTokenDisplay').textContent = student.ticket_token;
 
@@ -544,18 +705,40 @@ async function renderTicket(student) {
   }
 }
 
-// Real-time listener: As soon as admin scans ticket at the gate, student screen updates instantly!
-let attendanceSubscription = null;
-function subscribeToAttendanceUpdates(enrollmentId) {
+// Real-time listener: Handles both payment approval AND gate scan events
+let studentLiveSubscription = null;
+function subscribeToStudentUpdates(enrollmentId) {
   if (!supabase || !enrollmentId) return;
   try {
-    if (attendanceSubscription) {
-      supabase.removeChannel(attendanceSubscription);
-      attendanceSubscription = null;
+    if (studentLiveSubscription) {
+      supabase.removeChannel(studentLiveSubscription);
+      studentLiveSubscription = null;
     }
 
-    attendanceSubscription = supabase
-      .channel(`student-gate-${enrollmentId}`)
+    studentLiveSubscription = supabase
+      .channel(`student-live-${enrollmentId}`)
+      // 1. Payment status approved update
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'students',
+        filter: `enrollment_id=eq.${enrollmentId}`
+      }, async (payload) => {
+        console.log('Student record updated:', payload);
+        if (payload.new && payload.new.payment_status === 'approved') {
+          currentStudent = {
+            ...currentStudent,
+            ...payload.new
+          };
+          await renderTicket(currentStudent);
+          showApprovedTicket();
+          if (window.confetti) {
+            confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+          }
+          showAlert('🎉 Your ₹500 payment has been APPROVED! Official pass activated.', 'success');
+        }
+      })
+      // 2. Gate scan attendance insert
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
@@ -605,9 +788,9 @@ function updateHeaderUser(name) {
 // Sign out
 async function handleSignOut() {
   try {
-    if (attendanceSubscription && supabase) {
-      supabase.removeChannel(attendanceSubscription);
-      attendanceSubscription = null;
+    if (studentLiveSubscription && supabase) {
+      supabase.removeChannel(studentLiveSubscription);
+      studentLiveSubscription = null;
     }
     if (supabase) {
       await supabase.auth.signOut();
@@ -653,8 +836,45 @@ function setupEventListeners() {
     googleSignInBtn.addEventListener('click', signInWithGoogle);
   }
 
-  const regForm = document.getElementById('registrationForm');
-  if (regForm) regForm.addEventListener('submit', handleRegistration);
+  // Registration Forms
+  const pwForm = document.getElementById('pwRegistrationForm');
+  if (pwForm) pwForm.addEventListener('submit', handlePwRegistration);
+
+  const guestForm = document.getElementById('guestRegistrationForm');
+  if (guestForm) guestForm.addEventListener('submit', handleGuestRegistration);
+
+  // Guest Company Select ("Others" toggle)
+  const compSelect = document.getElementById('guestCompanySelect');
+  const customCompDiv = document.getElementById('guestCustomCompanyDiv');
+  const customCompInput = document.getElementById('guestCustomCompany');
+  if (compSelect && customCompDiv) {
+    compSelect.addEventListener('change', () => {
+      if (compSelect.value === 'Others') {
+        customCompDiv.classList.remove('hidden');
+        if (customCompInput) customCompInput.required = true;
+      } else {
+        customCompDiv.classList.add('hidden');
+        if (customCompInput) {
+          customCompInput.required = false;
+          customCompInput.value = '';
+        }
+      }
+    });
+  }
+
+  // Copy UPI ID button
+  const copyBtn = document.getElementById('copyUpiBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const upiId = APP_CONFIG.upiId || 'payalyadav210106@okaxis';
+      try {
+        await navigator.clipboard.writeText(upiId);
+        showAlert(`UPI ID '${upiId}' copied to clipboard!`, 'success');
+      } catch (e) {
+        prompt('Copy UPI ID:', upiId);
+      }
+    });
+  }
 
   if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
 
@@ -665,11 +885,21 @@ function setupEventListeners() {
     });
   }
 
-  const refreshBtn = document.getElementById('refreshTicketStatusBtn');
-  if (refreshBtn) {
-    refreshBtn.addEventListener('click', async () => {
-      await checkExistingSession();
-      showAlert('Ticket status refreshed from Supabase.', 'info');
-    });
-  }
+  // Refresh ticket / approval status button
+  const refreshBtns = [
+    document.getElementById('refreshTicketStatusBtn'),
+    document.getElementById('refreshPendingStatusBtn')
+  ];
+  refreshBtns.forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        const email = localStorage.getItem('student_email');
+        const name = localStorage.getItem('student_name');
+        if (email) {
+          await loadStudentProfile(email, name || 'Attendee');
+          showAlert('Pass & verification status updated.', 'info');
+        }
+      });
+    }
+  });
 }
