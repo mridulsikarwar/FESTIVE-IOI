@@ -115,7 +115,26 @@
     <!-- STEP 2: REGISTRATION SECTION -->
     <div id="regSection" class="hidden w-full max-w-md">
 
-      <!-- 2A: PW COMMUNITY REGISTRATION (Free) -->
+      <!-- 2A: REGISTRATIONS PAUSED CARD (When admin stops responses) -->
+      <div id="regClosedCard" class="hidden solid-card rounded-xl p-6 sm:p-7 text-center space-y-3.5">
+        <div class="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 text-amber-600 dark:text-amber-400 flex items-center justify-center text-2xl mx-auto shadow-sm">
+          <i class="ph-bold ph-lock-key"></i>
+        </div>
+        <div>
+          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 uppercase tracking-wider inline-block mb-1.5">
+            Responses Closed
+          </span>
+          <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">Registrations Are Paused</h3>
+          <p id="regClosedMessage" class="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-xs mx-auto">
+            New registrations for this category are currently closed by the event administrators.
+          </p>
+        </div>
+        <div class="pt-2 text-[11px] text-zinc-400 dark:text-zinc-500 border-t border-zinc-100 dark:border-zinc-800/60">
+          Already registered? Sign in with your registered email to view and download your entry pass.
+        </div>
+      </div>
+
+      <!-- 2B: PW COMMUNITY REGISTRATION (Free) -->
       <div id="pwRegContainer" class="hidden solid-card rounded-xl p-6 sm:p-7">
         <div class="pb-3.5 mb-4 border-b border-zinc-200 dark:border-zinc-800 flex items-start justify-between">
           <div>

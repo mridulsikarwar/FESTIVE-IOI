@@ -9,6 +9,26 @@ let appConfig = {
 
 let currentStudent = null;
 
+let systemConfig = {
+  pw_registration_open: 'true',
+  guest_registration_open: 'true'
+};
+
+// Load system configuration (Registration gate states)
+async function loadSystemConfig() {
+  if (!supabase) return;
+  try {
+    const { data, error } = await supabase.from('system_config').select('*');
+    if (!error && data) {
+      data.forEach(item => {
+        systemConfig[item.key] = item.value;
+      });
+    }
+  } catch (e) {
+    console.warn('System config load notice:', e);
+  }
+}
+
 // Domain validation helpers
 function isDomainAllowed(email) {
   if (!email || !email.includes('@')) return false;
@@ -53,11 +73,12 @@ function checkUrlAuthErrors() {
 }
 
 // Initialize application
-function initApp() {
+async function initApp() {
   console.log("FESTIVE-IOI initializing... readyState:", document.readyState, "URL hash:", window.location.hash ? "present" : "none");
   checkUrlAuthErrors();
   setupEventListeners();
   setupDomainDisplay();
+  await loadSystemConfig();
   loadDepartments();
   initAuth();
   initGoogleGis();
@@ -362,6 +383,29 @@ function showRegistrationForm(email, name) {
   const isPw = isDomainAllowed(email);
   const pwContainer = document.getElementById('pwRegContainer');
   const guestContainer = document.getElementById('guestRegContainer');
+  const closedCard = document.getElementById('regClosedCard');
+  const closedMsg = document.getElementById('regClosedMessage');
+
+  // Check if registrations are paused by admin
+  if (isPw && systemConfig.pw_registration_open === 'false') {
+    if (pwContainer) pwContainer.classList.add('hidden');
+    if (guestContainer) guestContainer.classList.add('hidden');
+    if (closedCard) closedCard.classList.remove('hidden');
+    if (closedMsg) closedMsg.textContent = 'Registrations for PW Community students & faculty are currently closed by the event administrators.';
+    showSection('reg');
+    return;
+  }
+
+  if (!isPw && systemConfig.guest_registration_open === 'false') {
+    if (pwContainer) pwContainer.classList.add('hidden');
+    if (guestContainer) guestContainer.classList.add('hidden');
+    if (closedCard) closedCard.classList.remove('hidden');
+    if (closedMsg) closedMsg.textContent = 'Registrations for external attendees are currently closed by the event administrators.';
+    showSection('reg');
+    return;
+  }
+
+  if (closedCard) closedCard.classList.add('hidden');
 
   if (isPw) {
     if (pwContainer) pwContainer.classList.remove('hidden');

@@ -47,6 +47,12 @@ const recordCount = document.getElementById('recordCount');
 
 let paymentsData = [];
 
+// System Config for Live Registration Gates
+let systemConfig = {
+  pw_registration_open: 'true',
+  guest_registration_open: 'true'
+};
+
 // Initialize
 function initAdmin() {
   setupEventListeners();
@@ -126,6 +132,7 @@ async function checkAdminSession() {
     showDashboard();
     await loadDepartmentsFilter();
     await loadStats();
+    await loadSystemConfig();
     await loadPayments();
     await loadDatasheet();
     setupRealtimeSubscription();
@@ -146,6 +153,7 @@ async function handleAdminLogin(e) {
     showDashboard();
     await loadDepartmentsFilter();
     await loadStats();
+    await loadSystemConfig();
     await loadPayments();
     await loadDatasheet();
     setupRealtimeSubscription();
@@ -964,10 +972,242 @@ function showAdminAlert(message, type = 'info') {
   }, 5000);
 }
 
+// --- Registration Controls (Live Gate Toggles) ---
+
+async function loadSystemConfig() {
+  try {
+    const { data, error } = await supabase.from('system_config').select('*');
+    if (!error && data) {
+      data.forEach(item => {
+        systemConfig[item.key] = item.value;
+      });
+    }
+    renderSystemConfigUI();
+  } catch (e) {
+    console.warn('System config load error:', e);
+  }
+}
+
+function renderSystemConfigUI() {
+  const pwBadge = document.getElementById('pwStatusBadge');
+  const pwBtn = document.getElementById('togglePwRegBtn');
+  const guestBadge = document.getElementById('guestStatusBadge');
+  const guestBtn = document.getElementById('toggleGuestRegBtn');
+
+  const isPwOpen = systemConfig.pw_registration_open !== 'false';
+  if (pwBadge) {
+    pwBadge.textContent = isPwOpen ? 'ACTIVE' : 'PAUSED';
+    pwBadge.className = isPwOpen
+      ? 'px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+      : 'px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800';
+  }
+  if (pwBtn) {
+    pwBtn.textContent = isPwOpen ? 'Stop Responses' : 'Resume Responses';
+    pwBtn.className = isPwOpen
+      ? 'px-2.5 py-1 rounded text-xs font-semibold transition bg-rose-600 hover:bg-rose-500 text-white shadow-sm'
+      : 'px-2.5 py-1 rounded text-xs font-semibold transition bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm';
+  }
+
+  const isGuestOpen = systemConfig.guest_registration_open !== 'false';
+  if (guestBadge) {
+    guestBadge.textContent = isGuestOpen ? 'ACTIVE' : 'PAUSED';
+    guestBadge.className = isGuestOpen
+      ? 'px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+      : 'px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800';
+  }
+  if (guestBtn) {
+    guestBtn.textContent = isGuestOpen ? 'Stop Responses' : 'Resume Responses';
+    guestBtn.className = isGuestOpen
+      ? 'px-2.5 py-1 rounded text-xs font-semibold transition bg-rose-600 hover:bg-rose-500 text-white shadow-sm'
+      : 'px-2.5 py-1 rounded text-xs font-semibold transition bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm';
+  }
+}
+
+async function toggleRegistrationGateway(key) {
+  const currentVal = systemConfig[key] !== 'false';
+  const newVal = currentVal ? 'false' : 'true';
+  const label = key === 'pw_registration_open' ? 'PW Community' : 'External Users';
+
+  const confirmMsg = currentVal
+    ? `Stop accepting new responses for ${label}?\n\nExisting registered attendees will still be able to access their tickets.`
+    : `Resume accepting new responses for ${label}?`;
+
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const { error } = await supabase
+      .from('system_config')
+      .upsert({ key, value: newVal, updated_at: new Date().toISOString() });
+
+    if (error) throw error;
+    systemConfig[key] = newVal;
+    renderSystemConfigUI();
+    showAdminAlert(`${label} registrations are now ${newVal === 'true' ? 'ACTIVE' : 'PAUSED'}.`, 'success');
+  } catch (e) {
+    showAdminAlert(`Failed to update setting: ${e.message || e}`, 'error');
+  }
+}
+
+// --- Manual Attendee Entry Modal Functions ---
+
+function openManualEntryModal() {
+  const modal = document.getElementById('manualEntryModal');
+  if (!modal) return;
+  const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase();
+  document.getElementById('manualTicketToken').value = `TKT-${randomHex}`;
+  document.getElementById('manualEnrollmentId').value = '';
+  document.getElementById('manualName').value = '';
+  document.getElementById('manualEmail').value = '';
+  document.getElementById('manualPhone').value = '';
+  document.getElementById('manualCompany').value = '';
+  document.getElementById('manualUtr').value = '';
+
+  setManualType('pw_member');
+  modal.classList.remove('hidden');
+}
+
+function closeManualEntryModal() {
+  const modal = document.getElementById('manualEntryModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function setManualType(type) {
+  const pwRadio = document.getElementById('manualTypePw');
+  const guestRadio = document.getElementById('manualTypeGuest');
+  const pwLabel = document.getElementById('typePwLabel');
+  const guestLabel = document.getElementById('typeGuestLabel');
+  const pwFields = document.getElementById('manualPwFieldsDiv');
+  const guestFields = document.getElementById('manualGuestFieldsDiv');
+  const enrollLabel = document.getElementById('manualEnrollmentLabel');
+  const enrollInput = document.getElementById('manualEnrollmentId');
+
+  const activeClass = 'flex items-center justify-center space-x-1.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition select-none bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
+  const inactiveClass = 'flex items-center justify-center space-x-1.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition select-none text-zinc-500 hover:text-zinc-900 dark:hover:text-white';
+
+  if (type === 'pw_member') {
+    if (pwRadio) pwRadio.checked = true;
+    if (pwLabel) pwLabel.className = activeClass;
+    if (guestLabel) guestLabel.className = inactiveClass;
+    if (pwFields) pwFields.classList.remove('hidden');
+    if (guestFields) guestFields.classList.add('hidden');
+    if (enrollLabel) enrollLabel.innerHTML = 'Enrollment / Roll No <span class="text-rose-500">*</span>';
+    if (enrollInput) enrollInput.placeholder = 'e.g. 22400123';
+  } else {
+    if (guestRadio) guestRadio.checked = true;
+    if (guestLabel) guestLabel.className = activeClass;
+    if (pwLabel) pwLabel.className = inactiveClass;
+    if (pwFields) pwFields.classList.add('hidden');
+    if (guestFields) guestFields.classList.remove('hidden');
+    if (enrollLabel) enrollLabel.innerHTML = 'Guest / Ref ID <span class="text-rose-500">*</span>';
+    if (enrollInput && !enrollInput.value) {
+      enrollInput.value = 'GST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
+  }
+}
+
+async function handleManualEntrySubmit(e) {
+  e.preventDefault();
+  const typeRadio = document.querySelector('input[name="manualUserType"]:checked');
+  const type = typeRadio ? typeRadio.value : 'pw_member';
+  const ticketToken = document.getElementById('manualTicketToken').value.trim().toUpperCase();
+  const enrollmentId = document.getElementById('manualEnrollmentId').value.trim().toUpperCase();
+  const name = document.getElementById('manualName').value.trim();
+  const email = document.getElementById('manualEmail').value.trim().toLowerCase();
+  const phone = document.getElementById('manualPhone').value.trim();
+
+  const submitBtn = document.getElementById('saveManualEntryBtn');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Saving...</span>';
+
+  try {
+    // Check duplicate enrollment ID
+    const { data: dupId } = await supabase.from('students').select('enrollment_id').eq('enrollment_id', enrollmentId).maybeSingle();
+    if (dupId) {
+      alert(`Enrollment / Ref ID '${enrollmentId}' is already registered!`);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="ph-bold ph-check"></i><span>Save & Register Attendee</span>';
+      return;
+    }
+
+    // Check duplicate email
+    const { data: dupEmail } = await supabase.from('students').select('email').eq('email', email).maybeSingle();
+    if (dupEmail) {
+      alert(`Email '${email}' is already registered!`);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="ph-bold ph-check"></i><span>Save & Register Attendee</span>';
+      return;
+    }
+
+    let newRecord = {
+      enrollment_id: enrollmentId,
+      name,
+      email,
+      phone,
+      ticket_token: ticketToken,
+      user_type: type,
+      registered_at: new Date().toISOString()
+    };
+
+    if (type === 'pw_member') {
+      newRecord.department = document.getElementById('manualDepartment').value;
+      newRecord.year = document.getElementById('manualYear').value;
+      newRecord.amount_paid = 0;
+      newRecord.payment_status = 'approved';
+    } else {
+      newRecord.department = 'External Guest';
+      newRecord.year = 'Guest';
+      newRecord.company = document.getElementById('manualCompany').value.trim() || 'External Guest';
+      newRecord.amount_paid = 500;
+      newRecord.payment_status = document.getElementById('manualPaymentStatus').value;
+      newRecord.utr_number = document.getElementById('manualUtr').value.trim() || null;
+    }
+
+    const { error } = await supabase.from('students').insert(newRecord);
+    if (error) throw error;
+
+    showAdminAlert(`Manual attendee '${name}' (${ticketToken}) registered successfully!`, 'success');
+    closeManualEntryModal();
+    await loadStats();
+    await loadPayments();
+    await loadDatasheet();
+  } catch (err) {
+    alert(`Error registering attendee: ${err.message || err}`);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="ph-bold ph-check"></i><span>Save & Register Attendee</span>';
+  }
+}
+
 // Setup Event Listeners
 function setupEventListeners() {
   if (adminLoginForm) adminLoginForm.addEventListener('submit', handleAdminLogin);
   if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', handleAdminLogout);
+
+  // Response Gateways Controls
+  const togglePwBtn = document.getElementById('togglePwRegBtn');
+  if (togglePwBtn) togglePwBtn.addEventListener('click', () => toggleRegistrationGateway('pw_registration_open'));
+
+  const toggleGuestBtn = document.getElementById('toggleGuestRegBtn');
+  if (toggleGuestBtn) toggleGuestBtn.addEventListener('click', () => toggleRegistrationGateway('guest_registration_open'));
+
+  // Manual Attendee Entry Modal
+  const openModalBtn = document.getElementById('openManualEntryModalBtn');
+  if (openModalBtn) openModalBtn.addEventListener('click', openManualEntryModal);
+
+  const closeModalBtn = document.getElementById('closeManualEntryModalBtn');
+  if (closeModalBtn) closeModalBtn.addEventListener('click', closeManualEntryModal);
+
+  const cancelModalBtn = document.getElementById('cancelManualEntryBtn');
+  if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeManualEntryModal);
+
+  const manualTypePwRadio = document.getElementById('manualTypePw');
+  if (manualTypePwRadio) manualTypePwRadio.addEventListener('change', () => setManualType('pw_member'));
+
+  const manualTypeGuestRadio = document.getElementById('manualTypeGuest');
+  if (manualTypeGuestRadio) manualTypeGuestRadio.addEventListener('change', () => setManualType('guest'));
+
+  const manualEntryForm = document.getElementById('manualEntryForm');
+  if (manualEntryForm) manualEntryForm.addEventListener('submit', handleManualEntrySubmit);
 
   if (tabScannerBtn) tabScannerBtn.addEventListener('click', () => switchTab('scanner'));
   if (tabPaymentsBtn) tabPaymentsBtn.addEventListener('click', () => switchTab('payments'));

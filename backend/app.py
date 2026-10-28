@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from dotenv import load_dotenv
 import jwt
 import qrcode
@@ -234,6 +234,19 @@ def register_student(
 ):
     email = auth["email"]
     user_type = auth.get("user_type", "pw_member")
+
+    # Check if registration gates are open
+    try:
+        cfg = {row[0]: row[1] for row in db.execute(text("SELECT key, value FROM system_config;")).fetchall()}
+        if user_type == "pw_member" and cfg.get("pw_registration_open") == "false":
+            raise HTTPException(status_code=403, detail="Registrations for PW Community are currently closed by organizers.")
+        if user_type == "guest" and cfg.get("guest_registration_open") == "false":
+            raise HTTPException(status_code=403, detail="Registrations for external attendees are currently closed by organizers.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("Config check note:", e)
+
     clean_enrollment = (body.enrollment_id or "").strip().upper()
     if not clean_enrollment:
         clean_enrollment = f"GST-{secrets.token_hex(3).upper()}"
@@ -303,6 +316,28 @@ def admin_login(body: AdminLoginRequest):
 
     token = create_jwt({"role": "admin", "user": "Staff Admin"}, expires_hours=24)
     return {"success": True, "token": token}
+
+# Registration Gateway Controls
+@app.get("/api/system-config")
+def get_system_config(db: Session = Depends(get_db)):
+    try:
+        rows = db.execute(text("SELECT key, value FROM system_config;")).fetchall()
+        return {"config": {r[0]: r[1] for r in rows}}
+    except Exception as e:
+        return {"config": {"pw_registration_open": "true", "guest_registration_open": "true"}}
+
+@app.post("/api/admin/toggle-registration/{key}")
+def toggle_reg_gateway(key: str, admin: dict = Depends(verify_admin_token), db: Session = Depends(get_db)):
+    if key not in ["pw_registration_open", "guest_registration_open"]:
+        raise HTTPException(status_code=400, detail="Invalid config key")
+    try:
+        current = db.execute(text("SELECT value FROM system_config WHERE key=:k"), {"k": key}).scalar()
+        new_val = "false" if current != "false" else "true"
+        db.execute(text("UPDATE system_config SET value=:v, updated_at=NOW() WHERE key=:k"), {"v": new_val, "k": key})
+        db.commit()
+        return {"success": True, "key": key, "value": new_val}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # 1-Click Payment Approval for External Guests
 @app.post("/api/admin/verify-payment/{enrollment_id}")
