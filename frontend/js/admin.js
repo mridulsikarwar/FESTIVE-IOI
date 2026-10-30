@@ -334,11 +334,29 @@ async function verifyAndMarkTicket(qrData) {
 
     console.log('[Scanner] Resolving ticket:', { ticketToken, enrollmentId, rawSearch });
 
-    // 1. Find Student in Supabase using resilient multi-strategy lookup
-    let student = null;
+    // 1. PRIMARY LOOKUP: Match strictly by enrollment_id (Roll No / ID)
+    if (enrollmentId) {
+      const cleanEid = String(enrollmentId).trim();
+      let { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('enrollment_id', cleanEid)
+        .maybeSingle();
+      if (!error && data) {
+        student = data;
+      } else {
+        const upperId = cleanEid.toUpperCase();
+        const resUpper = await supabase
+          .from('students')
+          .select('*')
+          .eq('enrollment_id', upperId)
+          .maybeSingle();
+        if (!resUpper.error && resUpper.data) student = resUpper.data;
+      }
+    }
 
-    // Strategy 1: Look up by ticketToken
-    if (ticketToken) {
+    // 2. SECONDARY LOOKUP: Look up by ticketToken if enrollmentId did not match
+    if (!student && ticketToken) {
       const { data, error } = await supabase
         .from('students')
         .select('*')
@@ -347,42 +365,36 @@ async function verifyAndMarkTicket(qrData) {
       if (!error && data) student = data;
     }
 
-    // Strategy 2: Look up by enrollmentId (direct match or uppercase)
-    if (!student && enrollmentId) {
-      const { data, error } = await supabase
+    // 3. TERTIARY LOOKUP: Fallback lookup by raw search (ID, email, or phone)
+    if (!student && rawSearch) {
+      const cleanSearch = rawSearch.trim();
+      let { data: byId } = await supabase
         .from('students')
         .select('*')
-        .eq('enrollment_id', enrollmentId)
+        .eq('enrollment_id', cleanSearch)
         .maybeSingle();
-      if (!error && data) {
-        student = data;
-      } else {
-        const upperId = enrollmentId.toUpperCase();
-        if (upperId !== enrollmentId) {
-          const resUpper = await supabase
-            .from('students')
-            .select('*')
-            .eq('enrollment_id', upperId)
-            .maybeSingle();
-          if (!resUpper.error && resUpper.data) student = resUpper.data;
-        }
+      if (!byId) {
+        const resUpper = await supabase
+          .from('students')
+          .select('*')
+          .eq('enrollment_id', cleanSearch.toUpperCase())
+          .maybeSingle();
+        byId = resUpper.data;
       }
-    }
-
-    // Strategy 3: Fallback lookup by email or phone
-    if (!student && rawSearch) {
-      if (rawSearch.includes('@')) {
+      if (byId) {
+        student = byId;
+      } else if (cleanSearch.includes('@')) {
         const { data } = await supabase
           .from('students')
           .select('*')
-          .eq('email', rawSearch.toLowerCase())
+          .eq('email', cleanSearch.toLowerCase())
           .maybeSingle();
         if (data) student = data;
-      } else if (/^\d{10}$/.test(rawSearch)) {
+      } else if (/^\d{10}$/.test(cleanSearch)) {
         const { data } = await supabase
           .from('students')
           .select('*')
-          .eq('phone', rawSearch)
+          .eq('phone', cleanSearch)
           .maybeSingle();
         if (data) student = data;
       }

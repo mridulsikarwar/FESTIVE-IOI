@@ -401,13 +401,17 @@ def scan_ticket(
     if enrollment_id:
         enrollment_id = str(enrollment_id).strip()
 
-    # Find student in Cloud Database
+    # Find student in Cloud Database (Enrollment ID takes TOP priority)
     student = None
-    if ticket_token:
-        student = db.query(Student).filter(Student.ticket_token == ticket_token).first()
-    if not student and enrollment_id:
+    if enrollment_id:
         student = db.query(Student).filter(
             (Student.enrollment_id == enrollment_id) | (Student.enrollment_id == enrollment_id.upper())
+        ).first()
+    if not student and ticket_token:
+        student = db.query(Student).filter(Student.ticket_token == ticket_token).first()
+    if not student and raw_search:
+        student = db.query(Student).filter(
+            (Student.enrollment_id == raw_search) | (Student.enrollment_id == raw_search.upper())
         ).first()
     if not student and "@" in raw_search:
         student = db.query(Student).filter(Student.email == raw_search.lower()).first()
