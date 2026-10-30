@@ -399,12 +399,28 @@ async function verifyAndMarkTicket(qrData) {
           .maybeSingle();
         if (data) student = data;
       }
+
+      // Strategy 4: Search by name (case-insensitive substring)
+      if (!student && cleanSearch.length >= 3) {
+        const { data: nameMatches } = await supabase
+          .from('students')
+          .select('*')
+          .ilike('name', `%${cleanSearch}%`)
+          .limit(5);
+        if (nameMatches && nameMatches.length > 0) {
+          // If 1 exact or closest match, select it
+          student = nameMatches[0];
+        }
+      }
     }
 
     if (!student) {
       console.warn('[Scanner] No matching attendee found for query:', { ticketToken, enrollmentId, rawSearch });
       playErrorBuzzer();
-      renderScanResult('invalid', { message: 'Ticket not found in cloud database.' });
+      renderScanResult('invalid', { 
+        message: 'Ticket not found in cloud database.',
+        scannedText: rawSearch
+      });
       return;
     }
 
@@ -584,10 +600,11 @@ function renderScanResult(type, data) {
         <i class="ph-bold ph-warning-circle"></i>
       </div>
       <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
-        Invalid Ticket
+        Invalid / Unrecognized Ticket
       </span>
       <p class="text-xs text-zinc-300 font-medium mt-1">${data.message || 'Ticket not found in cloud database.'}</p>
-      <p class="text-[11px] text-zinc-500 mt-1.5">Check if attendee is registered.</p>
+      ${data.scannedText ? `<div class="mt-2.5 p-2 rounded bg-black/60 border border-zinc-800 text-[11px] font-mono text-zinc-300 break-all select-all">Input: "${data.scannedText}"</div>` : ''}
+      <p class="text-[11px] text-zinc-500 mt-2">Try entering Roll Number, Name, or Phone in the box below, or check in from the DataSheet tab.</p>
     `;
   }
 }
@@ -984,7 +1001,17 @@ function renderDatasheetTable() {
           </span>
         </td>
         <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap text-[11px]">${scanTimeFormatted}</td>
-        <td class="py-2.5 px-3.5 text-center whitespace-nowrap">
+        <td class="py-2.5 px-3.5 text-center whitespace-nowrap space-x-1">
+          ${!isPresent ? `
+            <button onclick="handleManualCheckIn('${row.enrollment_id}')"
+                    title="Check in attendee"
+                    class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition inline-flex items-center space-x-1 shadow-sm">
+              <i class="ph-bold ph-check text-xs"></i>
+              <span>Check In</span>
+            </button>
+          ` : `
+            <span class="text-[11px] text-emerald-400 font-medium px-2 py-0.5">Admitted</span>
+          `}
           <button onclick="handleDeleteStudent('${row.enrollment_id}', '${encodeURIComponent(row.name)}')"
                   title="Delete student record"
                   class="px-2 py-1 rounded text-zinc-400 hover:text-rose-400 hover:bg-rose-950/30 border border-transparent hover:border-rose-900/40 text-xs transition inline-flex items-center space-x-1">
@@ -996,6 +1023,19 @@ function renderDatasheetTable() {
     `;
   }).join('');
 }
+
+// 1-Click Check In from Datasheet (Admin Gate Override)
+async function handleManualCheckIn(enrollmentId) {
+  try {
+    showAdminAlert(`Admitting attendee ${enrollmentId}...`, 'info');
+    await verifyAndMarkTicket(enrollmentId);
+    await loadDatasheet();
+    await loadStats();
+  } catch (err) {
+    showAdminAlert(`Check-in error: ${err.message || err}`, 'error');
+  }
+}
+window.handleManualCheckIn = handleManualCheckIn;
 
 // Delete Student (Admin Action)
 async function handleDeleteStudent(enrollmentId, encodedName) {
