@@ -284,35 +284,112 @@ async function verifyAndMarkTicket(qrData) {
   try {
     let ticketToken = null;
     let enrollmentId = null;
+    let rawSearch = '';
 
-    if (typeof qrData === 'string') {
+    if (typeof qrData === 'object' && qrData !== null) {
+      ticketToken = qrData.ticket_token || qrData.ticketToken || qrData.token || qrData.ticket || null;
+      enrollmentId = qrData.enrollment_id || qrData.enrollmentId || qrData.roll_no || qrData.rollNo || qrData.id || null;
+    } else if (typeof qrData === 'string' || typeof qrData === 'number') {
+      const clean = String(qrData).trim();
+      rawSearch = clean;
+
+      let parsed = null;
       try {
-        const parsed = JSON.parse(qrData);
-        ticketToken = parsed.ticket_token;
-        enrollmentId = parsed.enrollment_id;
+        let jsonCandidate = clean;
+        if (jsonCandidate.startsWith('{') && jsonCandidate.endsWith('}')) {
+          if (!jsonCandidate.includes('"') && jsonCandidate.includes("'")) {
+            jsonCandidate = jsonCandidate.replace(/'/g, '"');
+          }
+        }
+        parsed = JSON.parse(jsonCandidate);
       } catch (e) {
-        const clean = qrData.trim();
-        if (clean.startsWith('TKT-')) {
-          ticketToken = clean;
-        } else {
-          enrollmentId = clean.toUpperCase();
+        parsed = null;
+      }
+
+      // ONLY treat as JSON payload if it parsed into a non-null object (not a primitive number like 2501030001!)
+      if (parsed && typeof parsed === 'object') {
+        ticketToken = parsed.ticket_token || parsed.ticketToken || parsed.token || parsed.ticket || null;
+        enrollmentId = parsed.enrollment_id || parsed.enrollmentId || parsed.roll_no || parsed.rollNo || parsed.id || null;
+      } else {
+        // Primitive string, numeric roll number (e.g. 2501030001), URL, or ticket token
+        if (clean.startsWith('http://') || clean.startsWith('https://')) {
+          try {
+            const urlObj = new URL(clean);
+            ticketToken = urlObj.searchParams.get('ticket_token') || urlObj.searchParams.get('token') || urlObj.searchParams.get('ticket') || urlObj.searchParams.get('tkt');
+            enrollmentId = urlObj.searchParams.get('enrollment_id') || urlObj.searchParams.get('id') || urlObj.searchParams.get('roll') || urlObj.searchParams.get('roll_no');
+          } catch (urlErr) {}
+        }
+        if (!ticketToken && !enrollmentId) {
+          if (clean.toUpperCase().startsWith('TKT-')) {
+            ticketToken = clean.toUpperCase();
+          } else {
+            enrollmentId = clean;
+          }
         }
       }
     }
 
-    // 1. Find Student in Supabase
-    let query = supabase.from('students').select('*');
-    if (ticketToken && enrollmentId) {
-      query = query.or(`ticket_token.eq.${ticketToken},enrollment_id.eq.${enrollmentId}`);
-    } else if (ticketToken) {
-      query = query.eq('ticket_token', ticketToken);
-    } else if (enrollmentId) {
-      query = query.eq('enrollment_id', enrollmentId);
+    ticketToken = ticketToken ? String(ticketToken).trim().toUpperCase() : null;
+    enrollmentId = enrollmentId ? String(enrollmentId).trim() : null;
+
+    console.log('[Scanner] Resolving ticket:', { ticketToken, enrollmentId, rawSearch });
+
+    // 1. Find Student in Supabase using resilient multi-strategy lookup
+    let student = null;
+
+    // Strategy 1: Look up by ticketToken
+    if (ticketToken) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('ticket_token', ticketToken)
+        .maybeSingle();
+      if (!error && data) student = data;
     }
 
-    const { data: student, error: studentError } = await query.maybeSingle();
+    // Strategy 2: Look up by enrollmentId (direct match or uppercase)
+    if (!student && enrollmentId) {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .eq('enrollment_id', enrollmentId)
+        .maybeSingle();
+      if (!error && data) {
+        student = data;
+      } else {
+        const upperId = enrollmentId.toUpperCase();
+        if (upperId !== enrollmentId) {
+          const resUpper = await supabase
+            .from('students')
+            .select('*')
+            .eq('enrollment_id', upperId)
+            .maybeSingle();
+          if (!resUpper.error && resUpper.data) student = resUpper.data;
+        }
+      }
+    }
 
-    if (studentError || !student) {
+    // Strategy 3: Fallback lookup by email or phone
+    if (!student && rawSearch) {
+      if (rawSearch.includes('@')) {
+        const { data } = await supabase
+          .from('students')
+          .select('*')
+          .eq('email', rawSearch.toLowerCase())
+          .maybeSingle();
+        if (data) student = data;
+      } else if (/^\d{10}$/.test(rawSearch)) {
+        const { data } = await supabase
+          .from('students')
+          .select('*')
+          .eq('phone', rawSearch)
+          .maybeSingle();
+        if (data) student = data;
+      }
+    }
+
+    if (!student) {
+      console.warn('[Scanner] No matching attendee found for query:', { ticketToken, enrollmentId, rawSearch });
       playErrorBuzzer();
       renderScanResult('invalid', { message: 'Ticket not found in cloud database.' });
       return;

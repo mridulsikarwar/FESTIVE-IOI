@@ -364,26 +364,55 @@ def scan_ticket(
     qr_data = body.qrData.strip()
     ticket_token = None
     enrollment_id = None
+    raw_search = qr_data.strip()
 
-    # Parse QR content
+    # Parse QR content (JSON object, primitive roll number, URL, or plain token)
     try:
-        parsed = json.loads(qr_data)
-        ticket_token = parsed.get("ticket_token")
-        enrollment_id = parsed.get("enrollment_id")
-    except Exception:
-        if qr_data.startswith("TKT-"):
-            ticket_token = qr_data
+        json_candidate = raw_search
+        if json_candidate.startswith("{") and json_candidate.endswith("}"):
+            if '"' not in json_candidate and "'" in json_candidate:
+                json_candidate = json_candidate.replace("'", '"')
+        parsed = json.loads(json_candidate)
+        if isinstance(parsed, dict):
+            ticket_token = parsed.get("ticket_token") or parsed.get("ticketToken") or parsed.get("token") or parsed.get("ticket")
+            enrollment_id = parsed.get("enrollment_id") or parsed.get("enrollmentId") or parsed.get("roll_no") or parsed.get("rollNo") or parsed.get("id")
         else:
-            enrollment_id = qr_data.upper()
+            # Primitive number/string (e.g. 2501030001)
+            if raw_search.upper().startswith("TKT-"):
+                ticket_token = raw_search.upper()
+            else:
+                enrollment_id = raw_search
+    except Exception:
+        if raw_search.startswith("http://") or raw_search.startswith("https://"):
+            from urllib.parse import urlparse, parse_qs
+            parsed_url = urlparse(raw_search)
+            params = parse_qs(parsed_url.query)
+            ticket_token = (params.get("ticket_token") or params.get("token") or params.get("ticket") or [None])[0]
+            enrollment_id = (params.get("enrollment_id") or params.get("id") or params.get("roll") or params.get("roll_no") or [None])[0]
+        if not ticket_token and not enrollment_id:
+            if raw_search.upper().startswith("TKT-"):
+                ticket_token = raw_search.upper()
+            else:
+                enrollment_id = raw_search
+
+    # Clean strings
+    if ticket_token:
+        ticket_token = str(ticket_token).strip().upper()
+    if enrollment_id:
+        enrollment_id = str(enrollment_id).strip()
 
     # Find student in Cloud Database
-    query = db.query(Student)
-    if ticket_token and enrollment_id:
-        student = query.filter((Student.ticket_token == ticket_token) | (Student.enrollment_id == enrollment_id)).first()
-    elif ticket_token:
-        student = query.filter(Student.ticket_token == ticket_token).first()
-    else:
-        student = query.filter(Student.enrollment_id == enrollment_id).first()
+    student = None
+    if ticket_token:
+        student = db.query(Student).filter(Student.ticket_token == ticket_token).first()
+    if not student and enrollment_id:
+        student = db.query(Student).filter(
+            (Student.enrollment_id == enrollment_id) | (Student.enrollment_id == enrollment_id.upper())
+        ).first()
+    if not student and "@" in raw_search:
+        student = db.query(Student).filter(Student.email == raw_search.lower()).first()
+    if not student and raw_search.isdigit() and len(raw_search) == 10:
+        student = db.query(Student).filter(Student.phone == raw_search).first()
 
     if not student:
         raise HTTPException(
