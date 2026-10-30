@@ -282,6 +282,7 @@ async function onQrCodeSuccess(decodedText) {
 // Verify Ticket with Supabase (CRITICAL: Once scanned, CANNOT be scanned again!)
 async function verifyAndMarkTicket(qrData) {
   try {
+    let student = null;
     let ticketToken = null;
     let enrollmentId = null;
     let rawSearch = '';
@@ -467,8 +468,9 @@ async function verifyAndMarkTicket(qrData) {
     await loadStats();
     await loadDatasheet();
   } catch (err) {
+    console.error('[Scanner Error]:', err);
     playErrorBuzzer();
-    renderScanResult('error', { message: 'Network communication failure during verification' });
+    renderScanResult('error', { message: 'Verification error: ' + (err.message || 'Network communication failure') });
   }
 }
 
