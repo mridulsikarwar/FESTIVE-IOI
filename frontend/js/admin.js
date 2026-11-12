@@ -189,14 +189,22 @@ async function verifyAdminAndLoad() {
   const alreadyLoaded = currentAdmin && currentAdmin.email === adminRow.email;
   currentAdmin = adminRow;
 
+  const canManage = adminRow.role === 'super_admin' || adminRow.role === 'club_president';
+
   if (adminRoleBadge) {
-    adminRoleBadge.textContent = adminRow.role === 'super_admin'
-      ? 'SUPER ADMIN'
-      : `${adminRow.clubs?.name || 'CLUB'} PRESIDENT`;
+    if (adminRow.role === 'super_admin') {
+      adminRoleBadge.textContent = 'SUPER ADMIN';
+    } else if (adminRow.role === 'club_president') {
+      adminRoleBadge.textContent = `${adminRow.clubs?.name || 'CLUB'} PRESIDENT`;
+    } else {
+      adminRoleBadge.textContent = `${adminRow.clubs?.name || 'CLUB'} GATE STAFF`;
+    }
   }
 
-  const presTab = document.getElementById('tabPresidentsBtn');
-  if (presTab) presTab.classList.toggle('hidden', adminRow.role !== 'super_admin');
+  document.getElementById('openCreateEventModalBtn')?.classList.toggle('hidden', !canManage);
+  document.getElementById('tabEventsBtn')?.classList.toggle('hidden', !canManage);
+  document.getElementById('tabPaymentsBtn')?.classList.toggle('hidden', !canManage);
+  document.getElementById('tabPresidentsBtn')?.classList.toggle('hidden', adminRow.role !== 'super_admin');
 
   showDashboard();
   if (!alreadyLoaded) {
@@ -666,7 +674,9 @@ function renderDatasheetTable() {
         <td class="py-2.5 px-3">${isPresent ? '<span class="text-emerald-400 font-medium">Present</span>' : '<span class="text-zinc-500">Not Scanned</span>'}</td>
         <td class="py-2.5 px-3 text-center space-x-1">
           ${!isPresent ? `<button onclick="verifyAndMarkTicket('${escapeHtml(r.ticket_token)}')" class="px-2 py-1 rounded bg-emerald-600 text-white text-[11px]">Check In</button>` : ''}
-          <button onclick="deleteRegistration('${escapeHtml(r.id)}')" class="px-2 py-1 rounded text-rose-400 border border-rose-900/40 text-[11px]">Delete</button>
+          ${(currentAdmin?.role === 'super_admin' || currentAdmin?.role === 'club_president')
+            ? `<button onclick="deleteRegistration('${escapeHtml(r.id)}')" class="px-2 py-1 rounded text-rose-400 border border-rose-900/40 text-[11px]">Delete</button>`
+            : ''}
         </td>
       </tr>
     `;
@@ -727,10 +737,13 @@ function switchTab(tab) {
   const activeCls = 'admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
   const inactiveCls = 'admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-200';
 
+  const canManage = currentAdmin?.role === 'super_admin' || currentAdmin?.role === 'club_president';
   Object.keys(views).forEach(k => {
     document.getElementById(views[k])?.classList.toggle('hidden', k !== tab);
     const b = document.getElementById(btns[k]);
-    if (b) b.className = (k === tab ? activeCls : inactiveCls) + (k === 'presidents' && currentAdmin?.role !== 'super_admin' ? ' hidden' : '');
+    const hideBtn = (k === 'presidents' && currentAdmin?.role !== 'super_admin')
+      || ((k === 'events' || k === 'payments') && !canManage);
+    if (b) b.className = (k === tab ? activeCls : inactiveCls) + (hideBtn ? ' hidden' : '');
   });
 }
 

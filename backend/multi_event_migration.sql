@@ -186,7 +186,7 @@ AS $$
     LIMIT 1;
 $$;
 
-CREATE OR REPLACE FUNCTION public.can_manage_club(target_club_id INTEGER)
+CREATE OR REPLACE FUNCTION public.is_club_manager(target_club_id INTEGER)
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
@@ -194,10 +194,48 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     SELECT public.is_super_admin()
-        OR (public.is_admin() AND public.admin_club_id() = target_club_id);
+        OR (
+            auth.uid() IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM public.admin_users a
+                WHERE lower(a.email) = lower(trim(auth.jwt() ->> 'email'))
+                  AND a.role = 'club_president'
+                  AND a.club_id = target_club_id
+            )
+        );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_manage_club(target_club_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT public.is_club_manager(target_club_id);
 $$;
 
 CREATE OR REPLACE FUNCTION public.can_manage_event(target_event_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT public.is_super_admin()
+        OR EXISTS (
+            SELECT 1
+            FROM public.events e
+            JOIN public.admin_users a
+              ON a.club_id = e.club_id
+            WHERE e.id = target_event_id
+              AND auth.uid() IS NOT NULL
+              AND lower(a.email) = lower(trim(auth.jwt() ->> 'email'))
+              AND a.role = 'club_president'
+        );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_scan_event(target_event_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
@@ -245,8 +283,8 @@ AS $$
         );
 $$;
 
-REVOKE ALL ON FUNCTION public.is_admin(), public.is_super_admin(), public.admin_club_id(), public.can_manage_club(INTEGER), public.can_manage_event(UUID), public.get_event_registration_counts(), public.is_team_member(UUID) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_admin(), public.is_super_admin(), public.admin_club_id(), public.can_manage_club(INTEGER), public.can_manage_event(UUID), public.is_team_member(UUID) TO authenticated;
+REVOKE ALL ON FUNCTION public.is_admin(), public.is_super_admin(), public.admin_club_id(), public.is_club_manager(INTEGER), public.can_manage_club(INTEGER), public.can_manage_event(UUID), public.can_scan_event(UUID), public.get_event_registration_counts(), public.is_team_member(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin(), public.is_super_admin(), public.admin_club_id(), public.is_club_manager(INTEGER), public.can_manage_club(INTEGER), public.can_manage_event(UUID), public.can_scan_event(UUID), public.is_team_member(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_event_registration_counts() TO anon, authenticated;
 
 -- 9. Server-Side Triggers
@@ -528,19 +566,19 @@ DROP POLICY IF EXISTS admin_users_super_admin_write ON public.admin_users;
 CREATE POLICY admin_users_super_admin_write ON public.admin_users FOR ALL TO authenticated
     USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
 
--- events: public sees published events; club admins manage their own club's events
+-- events: public sees published events; gate_staff/presidents see their club's events; only club_president/super_admin can create/edit/delete
 DROP POLICY IF EXISTS events_public_read ON public.events;
 CREATE POLICY events_public_read ON public.events FOR SELECT TO anon, authenticated
-    USING (status = 'published' OR public.can_manage_club(club_id));
+    USING (status = 'published' OR public.can_scan_event(id));
 DROP POLICY IF EXISTS events_club_admin_insert ON public.events;
 CREATE POLICY events_club_admin_insert ON public.events FOR INSERT TO authenticated
-    WITH CHECK (public.can_manage_club(club_id));
+    WITH CHECK (public.is_club_manager(club_id));
 DROP POLICY IF EXISTS events_club_admin_update ON public.events;
 CREATE POLICY events_club_admin_update ON public.events FOR UPDATE TO authenticated
-    USING (public.can_manage_club(club_id)) WITH CHECK (public.can_manage_club(club_id));
+    USING (public.is_club_manager(club_id)) WITH CHECK (public.is_club_manager(club_id));
 DROP POLICY IF EXISTS events_club_admin_delete ON public.events;
 CREATE POLICY events_club_admin_delete ON public.events FOR DELETE TO authenticated
-    USING (public.can_manage_club(club_id));
+    USING (public.is_club_manager(club_id));
 
 -- attendees: own profile or any admin
 DROP POLICY IF EXISTS attendees_select_own_or_admin ON public.attendees;
@@ -564,13 +602,13 @@ DROP POLICY IF EXISTS teams_admin_delete ON public.teams;
 CREATE POLICY teams_admin_delete ON public.teams FOR DELETE TO authenticated
     USING (public.can_manage_event(event_id));
 
--- registrations: own ticket, teammate in same team, or club admin managing that event
+-- registrations: own ticket, teammate in same team, or club staff/president/super_admin for that event
 DROP POLICY IF EXISTS registrations_select ON public.registrations;
 CREATE POLICY registrations_select ON public.registrations FOR SELECT TO authenticated
     USING (
         auth.uid() IS NOT NULL AND (
             lower(attendee_email) = lower(auth.jwt() ->> 'email')
-            OR public.can_manage_event(event_id)
+            OR public.can_scan_event(event_id)
             OR public.is_team_member(team_id)
         )
     );
@@ -587,12 +625,12 @@ DROP POLICY IF EXISTS registrations_admin_delete ON public.registrations;
 CREATE POLICY registrations_admin_delete ON public.registrations FOR DELETE TO authenticated
     USING (public.can_manage_event(event_id));
 
--- attendance: own registration or club admin managing that event
+-- attendance: own registration or club gate_staff/president/super_admin can read & scan; only president/super_admin can update/delete
 DROP POLICY IF EXISTS attendance_select ON public.attendance;
 CREATE POLICY attendance_select ON public.attendance FOR SELECT TO authenticated
     USING (
         auth.uid() IS NOT NULL AND (
-            public.can_manage_event(event_id)
+            public.can_scan_event(event_id)
             OR EXISTS (
                 SELECT 1 FROM public.registrations r
                 WHERE r.id = attendance.registration_id
@@ -602,7 +640,7 @@ CREATE POLICY attendance_select ON public.attendance FOR SELECT TO authenticated
     );
 DROP POLICY IF EXISTS attendance_admin_insert ON public.attendance;
 CREATE POLICY attendance_admin_insert ON public.attendance FOR INSERT TO authenticated
-    WITH CHECK (public.can_manage_event(event_id));
+    WITH CHECK (public.can_scan_event(event_id));
 DROP POLICY IF EXISTS attendance_admin_update ON public.attendance;
 CREATE POLICY attendance_admin_update ON public.attendance FOR UPDATE TO authenticated
     USING (public.can_manage_event(event_id)) WITH CHECK (public.can_manage_event(event_id));
