@@ -6,7 +6,6 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const APP_CONFIG = {
   allowedDomains: ["pwioi.com", "pw.live"],
   allowedDomain: "pwioi.com",
-  adminPasscode: "admin123",
   googleClientId: "163420756626-dbadvu3ab0mmpps3sk4mtnpjp4c2vh4p.apps.googleusercontent.com",
   upiId: "payalyadav210106@okaxis",
   upiPayeeName: "Payal Yadav / FESTIVE IOI",

@@ -34,7 +34,7 @@ class Student(Base):
     user_type = Column(String(20), default="pw_member") # pw_member | guest
     company = Column(String(100), nullable=True) # UpGrad, News nation, Silver Spring, Others
     amount_paid = Column(Numeric, default=0)
-    utr_number = Column(String(50), nullable=True)
+    utr_number = Column(String(50), nullable=True, unique=True)
     payment_status = Column(String(20), default="approved") # approved | pending_verification
 
     # 1-to-1 relationship with attendance check-in
@@ -88,3 +88,11 @@ class Attendance(Base):
             "scanned_at": self.scanned_at.isoformat() if self.scanned_at else None,
             "scanned_by": self.scanned_by
         }
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    email = Column(String(100), primary_key=True)
+    role = Column(String(30), nullable=False, default="admin")
+    created_at = Column(DateTime, default=datetime.utcnow)

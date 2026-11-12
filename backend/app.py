@@ -2,11 +2,14 @@ import os
 import io
 import csv
 import json
+import re
+import time
 import secrets
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Header, status, Response
+from fastapi import FastAPI, Depends, HTTPException, Header, Request, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -40,9 +43,32 @@ PORT = int(os.getenv("PORT", 8000))
 ALLOWED_DOMAIN = os.getenv("ALLOWED_DOMAIN", "pwioi.com,pw.live").strip()
 ALLOWED_DOMAINS = [d.strip().lower() for d in ALLOWED_DOMAIN.split(",") if d.strip()]
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "admin123").strip()
-JWT_SECRET = os.getenv("JWT_SECRET", "cloud_festive_jwt_secret_key_2026").strip()
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "").strip()
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip() or secrets.token_urlsafe(32)
 JWT_ALGORITHM = "HS256"
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080").split(",")
+    if o.strip()
+]
+
+_rate_buckets: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+
+
+def enforce_rate_limit(request: Request, bucket: str, max_requests: int = 20, window_seconds: int = 60) -> None:
+    """Simple per-IP sliding-window rate limiter to mitigate bot floods and brute-force attempts."""
+    client_ip = request.client.host if request.client else "unknown"
+    key = (bucket, client_ip)
+    now = time.monotonic()
+    q = _rate_buckets[key]
+    while q and (now - q[0]) > window_seconds:
+        q.popleft()
+    if len(q) >= max_requests:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please try again shortly."
+        )
+    q.append(now)
 
 app = FastAPI(
     title="FESTIVE IOI Cloud Event Management System",
@@ -53,10 +79,10 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Startup: Initialize Cloud Database Schema
@@ -118,8 +144,7 @@ def verify_admin_token(authorization: Optional[str] = Header(None)) -> dict:
 
 # Pydantic Schemas
 class GoogleAuthRequest(BaseModel):
-    idToken: Optional[str] = None
-    demoUser: Optional[dict] = None
+    idToken: str
 
 class StudentRegisterRequest(BaseModel):
     enrollment_id: Optional[str] = None
@@ -153,29 +178,27 @@ def list_departments(db: Session = Depends(get_db)):
     return {"departments": [d.to_dict() for d in depts]}
 
 @app.post("/api/auth/google")
-def auth_google(req: GoogleAuthRequest, db: Session = Depends(get_db)):
-    email = None
-    name = None
-    google_id = None
+def auth_google(request: Request, req: GoogleAuthRequest, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "auth_google", max_requests=20, window_seconds=60)
 
-    if req.idToken:
-        if not GOOGLE_CLIENT_ID:
-            raise HTTPException(status_code=500, detail="Google Client ID not configured on server.")
-        try:
-            idinfo = id_token.verify_oauth2_token(
-                req.idToken, google_requests.Request(), GOOGLE_CLIENT_ID
-            )
-            email = idinfo.get("email", "").lower().strip()
-            name = idinfo.get("name", "Student")
-            google_id = idinfo.get("sub")
-        except Exception as e:
-            raise HTTPException(status_code=401, detail=f"Google token verification failed: {str(e)}")
-    elif req.demoUser:
-        email = req.demoUser.get("email", "").lower().strip()
-        name = req.demoUser.get("name", "Student")
-        google_id = f"demo-{secrets.token_hex(4)}"
-    else:
-        raise HTTPException(status_code=400, detail="Missing credential or token.")
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Google Client ID not configured on server.")
+    if not req.idToken:
+        raise HTTPException(status_code=400, detail="Missing Google ID token.")
+
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            req.idToken, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+        if not idinfo.get("email_verified"):
+            raise HTTPException(status_code=401, detail="Google email is not verified.")
+        email = idinfo.get("email", "").lower().strip()
+        name = idinfo.get("name", "Student")
+        google_id = idinfo.get("sub")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Google token verification failed: {str(e)}")
 
     # Determine domain & user type
     if "@" not in email:
@@ -228,10 +251,12 @@ def get_student_profile(auth: dict = Depends(verify_student_token), db: Session 
 
 @app.post("/api/student/register")
 def register_student(
+    request: Request,
     body: StudentRegisterRequest,
     auth: dict = Depends(verify_student_token),
     db: Session = Depends(get_db)
 ):
+    enforce_rate_limit(request, "student_register", max_requests=10, window_seconds=60)
     email = auth["email"]
     user_type = auth.get("user_type", "pw_member")
 
@@ -265,8 +290,10 @@ def register_student(
         raise HTTPException(status_code=400, detail="This phone number is already registered.")
 
     # Validate UTR if guest
-    if user_type == "guest" and body.utr_number:
-        clean_utr = body.utr_number.strip()
+    if user_type == "guest":
+        clean_utr = (body.utr_number or "").strip()
+        if not re.fullmatch(r"\d{12}", clean_utr):
+            raise HTTPException(status_code=400, detail="A valid 12-digit numeric UTR is required for guests.")
         if db.query(Student).filter(Student.utr_number == clean_utr).first():
             raise HTTPException(status_code=400, detail="This 12-digit UTR has already been submitted.")
 
@@ -310,8 +337,11 @@ def register_student(
 # --- Admin Endpoints ---
 
 @app.post("/api/admin/login")
-def admin_login(body: AdminLoginRequest):
-    if body.password != ADMIN_SECRET:
+def admin_login(request: Request, body: AdminLoginRequest):
+    enforce_rate_limit(request, "admin_login", max_requests=10, window_seconds=60)
+    if not ADMIN_SECRET:
+        raise HTTPException(status_code=503, detail="Admin passcode login is not configured on server.")
+    if not secrets.compare_digest(body.password, ADMIN_SECRET):
         raise HTTPException(status_code=401, detail="Invalid admin passcode.")
 
     token = create_jwt({"role": "admin", "user": "Staff Admin"}, expires_hours=24)
@@ -401,22 +431,19 @@ def scan_ticket(
     if enrollment_id:
         enrollment_id = str(enrollment_id).strip()
 
-    # Find student in Cloud Database (Enrollment ID takes TOP priority)
+    # Find student in Cloud Database (require ticket_token when provided, or fallback to enrollment_id)
     student = None
-    if enrollment_id:
+    if ticket_token and enrollment_id:
+        student = db.query(Student).filter(
+            Student.ticket_token == ticket_token,
+            (Student.enrollment_id == enrollment_id) | (Student.enrollment_id == enrollment_id.upper())
+        ).first()
+    elif ticket_token:
+        student = db.query(Student).filter(Student.ticket_token == ticket_token).first()
+    elif enrollment_id:
         student = db.query(Student).filter(
             (Student.enrollment_id == enrollment_id) | (Student.enrollment_id == enrollment_id.upper())
         ).first()
-    if not student and ticket_token:
-        student = db.query(Student).filter(Student.ticket_token == ticket_token).first()
-    if not student and raw_search:
-        student = db.query(Student).filter(
-            (Student.enrollment_id == raw_search) | (Student.enrollment_id == raw_search.upper())
-        ).first()
-    if not student and "@" in raw_search:
-        student = db.query(Student).filter(Student.email == raw_search.lower()).first()
-    if not student and raw_search.isdigit() and len(raw_search) == 10:
-        student = db.query(Student).filter(Student.phone == raw_search).first()
 
     if not student:
         raise HTTPException(
@@ -467,17 +494,6 @@ def scan_ticket(
     db.commit()
 
     student_data = student.to_dict()
-    student_data["attendance_status"] = "Present"
-    student_data["scanned_at"] = scan_time.isoformat()
-
-    return {
-        "success": True,
-        "alreadyScanned": False,
-        "status": "VERIFIED",
-        "student": student_data,
-        "scannedAt": scan_time.isoformat(),
-        "message": f"✅ TICKET VERIFIED! Welcome, {student.name}!"
-    }
     student_data["attendance_status"] = "Present"
     student_data["scanned_at"] = scan_time.isoformat()
 

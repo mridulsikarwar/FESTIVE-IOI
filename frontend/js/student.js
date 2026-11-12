@@ -166,20 +166,32 @@ function signInWithGoogle(e) {
   window.location.href = authUrl;
 }
 
-// Handle Authenticated User (from Supabase OAuth or Google Identity Services)
+// Return verified user from active Supabase Auth session (never trust localStorage)
+async function getVerifiedAuthUser() {
+  if (!supabase) return null;
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (!error && user && user.email) return user;
+  } catch (e) {
+    console.warn('Auth user verification notice:', e);
+  }
+  return null;
+}
+
+// Handle Authenticated User (from verified Supabase Auth session)
 async function handleAuthenticatedUser(user) {
-  const email = (user.email || '').toLowerCase().trim();
-  const metadata = user.user_metadata || {};
-  const name = metadata.full_name || metadata.name || user.displayName || (email.split('@')[0]);
+  const email = (user?.email || '').toLowerCase().trim();
+  const metadata = user?.user_metadata || {};
+  const name = metadata.full_name || metadata.name || user?.displayName || (email.split('@')[0]);
 
   if (!email) {
     showAlert('Could not retrieve email from Google authentication.', 'error');
     return;
   }
 
-  // 1. Persist locally
-  localStorage.setItem('student_email', email);
-  localStorage.setItem('student_name', name);
+  // Clear legacy unverified localStorage auth keys
+  localStorage.removeItem('student_email');
+  localStorage.removeItem('student_name');
   updateHeaderUser(name);
 
   // Clean URL hash or query if present from OAuth redirect
@@ -190,7 +202,7 @@ async function handleAuthenticatedUser(user) {
     history.replaceState(null, '', window.location.pathname);
   }
 
-  // 2. Check if student / guest already exists in Supabase
+  // Query verified student/guest profile in Supabase
   await loadStudentProfile(email, name);
 }
 
@@ -254,33 +266,25 @@ async function initAuth() {
     // 2. Check if URL hash has #access_token= (Implicit flow return)
     const hash = window.location.hash || '';
     if (hash && hash.includes('access_token=')) {
-      console.log("Detected access token in URL hash. Decoding and setting session...");
+      console.log("Detected access token in URL hash. Verifying session with Supabase...");
       try {
         const hashParams = new URLSearchParams(hash.substring(1));
         const accessToken = hashParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token');
         if (accessToken) {
-          const payload = decodeJwt(accessToken);
-          try {
-            await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken || ''
-            });
-          } catch (setErr) {
-            console.warn("supabase.auth.setSession notice:", setErr);
-          }
-
-          if (payload && payload.email) {
-            console.log("Authenticated user extracted from URL token:", payload.email);
-            await handleAuthenticatedUser({
-              email: payload.email,
-              user_metadata: payload.user_metadata || { full_name: payload.name }
-            });
+          const { data: sessionData, error: setErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || ''
+          });
+          if (setErr) throw setErr;
+          const verifiedUser = sessionData?.user || await getVerifiedAuthUser();
+          if (verifiedUser && verifiedUser.email) {
+            await handleAuthenticatedUser(verifiedUser);
             return;
           }
         }
       } catch (err) {
-        console.warn("Hash token parsing error:", err);
+        console.warn("Hash token verification error:", err);
       }
     }
 
@@ -296,49 +300,25 @@ async function initAuth() {
       }
     });
 
-    // 4. Check active Supabase session
+    // 4. Check active verified Supabase session
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (!error && session && session.user) {
-        console.log("Active Supabase session detected:", session.user.email);
-        await handleAuthenticatedUser(session.user);
-        return;
+        const verifiedUser = await getVerifiedAuthUser();
+        if (verifiedUser) {
+          console.log("Active Supabase session verified:", verifiedUser.email);
+          await handleAuthenticatedUser(verifiedUser);
+          return;
+        }
       }
     } catch (e) {
       console.warn('Error reading Supabase session:', e);
     }
   }
 
-  // 5. Fallback to cached student session in localStorage
-  await checkExistingSession();
-}
-
-// Check existing session on page load
-async function checkExistingSession() {
-  const savedEmail = localStorage.getItem('student_email');
-  const savedName = localStorage.getItem('student_name');
-
-  if (!savedEmail) {
-    showSection('auth');
-    return;
-  }
-
-  updateHeaderUser(savedName || 'Student');
-  await loadStudentProfile(savedEmail, savedName || '');
-}
-
-// Helper: Decode JWT from GIS
-function decodeJwt(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
+  localStorage.removeItem('student_email');
+  localStorage.removeItem('student_name');
+  showSection('auth');
 }
 
 // Optional Google Identity Services (GIS) One Tap / Button
@@ -348,16 +328,19 @@ function initGoogleGis() {
       google.accounts.id.initialize({
         client_id: appConfig.googleClientId,
         callback: async (response) => {
-          if (response.credential) {
-            const payload = decodeJwt(response.credential);
-            if (payload && payload.email) {
-              await handleAuthenticatedUser({
-                email: payload.email,
-                user_metadata: {
-                  full_name: payload.name || payload.given_name,
-                  picture: payload.picture
-                }
+          if (response.credential && supabase) {
+            try {
+              const { data, error } = await supabase.auth.signInWithIdToken({
+                provider: 'google',
+                token: response.credential
               });
+              if (error) throw error;
+              if (data && data.user) {
+                await handleAuthenticatedUser(data.user);
+              }
+            } catch (err) {
+              console.warn('Google ID token sign-in notice:', err);
+              showAlert('Please sign in using the "Continue with Google" button above.', 'error');
             }
           }
         }
@@ -479,52 +462,52 @@ function showApprovedTicket() {
   if (approvedCard) approvedCard.classList.remove('hidden');
 }
 
+function getRegistrationErrorMessage(err) {
+  const msg = String(err?.message || '');
+  const details = String(err?.details || '');
+  const combined = `${msg} ${details}`.toLowerCase();
+
+  if (err?.code === '23505' || combined.includes('duplicate key')) {
+    if (combined.includes('students_pkey') || combined.includes('enrollment_id')) {
+      return 'This Enrollment ID is already registered!';
+    }
+    if (combined.includes('phone')) {
+      return 'This phone number is already registered!';
+    }
+    if (combined.includes('email')) {
+      return 'This email is already registered!';
+    }
+    if (combined.includes('utr_number') || combined.includes('utr')) {
+      return 'This 12-digit UTR has already been submitted!';
+    }
+    return 'A record with these details is already registered.';
+  }
+  return msg || 'Database error';
+}
+
 // Handle PW Student / Faculty Registration (Free)
 async function handlePwRegistration(e) {
   e.preventDefault();
-  const email = localStorage.getItem('student_email') || document.getElementById('regEmail').value.trim();
-  const enrollment_id = document.getElementById('regEnrollmentId').value.trim().toUpperCase();
-  const name = document.getElementById('regName').value.trim();
-  const department = document.getElementById('regDepartment').value;
-  const year = document.getElementById('regYear').value;
-  const phone = document.getElementById('regPhone').value.trim();
-
   const submitBtn = document.getElementById('submitPwRegBtn');
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Registering in Cloud DB...</span>';
 
   try {
-    // 1. Check duplicate enrollment ID
-    const { data: dupId } = await supabase
-      .from('students')
-      .select('enrollment_id')
-      .eq('enrollment_id', enrollment_id)
-      .maybeSingle();
-
-    if (dupId) {
-      showAlert(`Enrollment ID '${enrollment_id}' is already registered!`, 'error');
-      resetPwSubmitBtn(submitBtn);
+    const authUser = await getVerifiedAuthUser();
+    if (!authUser || !authUser.email) {
+      showAlert('Please sign in with Google before registering.', 'error');
+      showSection('auth');
       return;
     }
 
-    // 2. Check duplicate phone
-    const { data: dupPhone } = await supabase
-      .from('students')
-      .select('phone')
-      .eq('phone', phone)
-      .maybeSingle();
+    const email = authUser.email.toLowerCase().trim();
+    const enrollment_id = document.getElementById('regEnrollmentId').value.trim().toUpperCase();
+    const name = document.getElementById('regName').value.trim();
+    const department = document.getElementById('regDepartment').value;
+    const year = document.getElementById('regYear').value;
+    const phone = document.getElementById('regPhone').value.trim();
 
-    if (dupPhone) {
-      showAlert(`Phone number '${phone}' is already registered!`, 'error');
-      resetPwSubmitBtn(submitBtn);
-      return;
-    }
-
-    // 3. Generate secure ticket token
-    const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-    const ticketToken = `TKT-${randomHex}`;
-
-    // 4. Insert into Supabase
+    // Server-side Postgres trigger generates ticket_token and enforces domain/payment rules
     const { data: newStudent, error: insertError } = await supabase
       .from('students')
       .insert({
@@ -534,13 +517,7 @@ async function handlePwRegistration(e) {
         year,
         phone,
         email,
-        user_type: 'pw_member',
-        company: null,
-        amount_paid: 0,
-        utr_number: null,
-        payment_status: 'approved',
-        ticket_token: ticketToken,
-        registered_at: new Date().toISOString()
+        ticket_token: ''
       })
       .select()
       .single();
@@ -564,7 +541,7 @@ async function handlePwRegistration(e) {
     showAlert('🎉 Registration complete! Here is your official entry pass.', 'success');
   } catch (err) {
     console.error('PW Registration error:', err);
-    showAlert('Registration error: ' + (err.message || 'Database error'), 'error');
+    showAlert('Registration error: ' + getRegistrationErrorMessage(err), 'error');
   } finally {
     resetPwSubmitBtn(submitBtn);
   }
@@ -579,7 +556,6 @@ function resetPwSubmitBtn(btn) {
 // Handle External Attendee (Guest) Registration (₹500 Manual UPI)
 async function handleGuestRegistration(e) {
   e.preventDefault();
-  const email = localStorage.getItem('student_email') || document.getElementById('guestEmail').value.trim();
   const name = document.getElementById('guestName').value.trim();
   const phone = document.getElementById('guestPhone').value.trim();
   const companySelect = document.getElementById('guestCompanySelect').value;
@@ -601,54 +577,26 @@ async function handleGuestRegistration(e) {
   submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Submitting Registration & UTR...</span>';
 
   try {
-    // 1. Check duplicate UTR
-    const { data: dupUtr } = await supabase
-      .from('students')
-      .select('enrollment_id, utr_number')
-      .eq('utr_number', utr)
-      .maybeSingle();
-
-    if (dupUtr) {
-      showAlert(`This 12-digit UTR (${utr}) has already been registered!`, 'error');
-      resetGuestSubmitBtn(submitBtn);
+    const authUser = await getVerifiedAuthUser();
+    if (!authUser || !authUser.email) {
+      showAlert('Please sign in with Google before registering.', 'error');
+      showSection('auth');
       return;
     }
 
-    // 2. Check duplicate phone
-    const { data: dupPhone } = await supabase
-      .from('students')
-      .select('phone')
-      .eq('phone', phone)
-      .maybeSingle();
+    const email = authUser.email.toLowerCase().trim();
 
-    if (dupPhone) {
-      showAlert(`Phone number '${phone}' is already registered!`, 'error');
-      resetGuestSubmitBtn(submitBtn);
-      return;
-    }
-
-    // 3. Auto-generate Guest Enrollment ID & Ticket Token
-    const guestId = 'GST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-    const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-    const ticketToken = `TKT-${randomHex}`;
-
-    // 4. Insert into Supabase
+    // Server-side Postgres trigger generates GST-ID, ticket_token, and forces pending_verification
     const { data: newStudent, error: insertError } = await supabase
       .from('students')
       .insert({
-        enrollment_id: guestId,
+        enrollment_id: '',
         name,
-        department: 'External Guest',
-        year: 'Guest',
         phone,
         email,
-        user_type: 'guest',
         company,
-        amount_paid: 500,
         utr_number: utr,
-        payment_status: 'pending_verification',
-        ticket_token: ticketToken,
-        registered_at: new Date().toISOString()
+        ticket_token: ''
       })
       .select()
       .single();
@@ -663,11 +611,11 @@ async function handleGuestRegistration(e) {
 
     showPendingVerification(currentStudent);
     showSection('ticket');
-    subscribeToStudentUpdates(guestId);
+    subscribeToStudentUpdates(newStudent.enrollment_id);
     showAlert('✅ Payment submitted! Your pass is pending admin approval.', 'success');
   } catch (err) {
     console.error('Guest Registration error:', err);
-    showAlert('Registration error: ' + (err.message || 'Database error'), 'error');
+    showAlert('Registration error: ' + getRegistrationErrorMessage(err), 'error');
   } finally {
     resetGuestSubmitBtn(submitBtn);
   }
@@ -937,11 +885,15 @@ function setupEventListeners() {
   refreshBtns.forEach(btn => {
     if (btn) {
       btn.addEventListener('click', async () => {
-        const email = localStorage.getItem('student_email');
-        const name = localStorage.getItem('student_name');
-        if (email) {
-          await loadStudentProfile(email, name || 'Attendee');
+        const authUser = await getVerifiedAuthUser();
+        if (authUser && authUser.email) {
+          const meta = authUser.user_metadata || {};
+          const displayName = meta.full_name || meta.name || 'Attendee';
+          await loadStudentProfile(authUser.email.toLowerCase().trim(), displayName);
           showAlert('Pass & verification status updated.', 'info');
+        } else {
+          showSection('auth');
+          showAlert('Please sign in again to refresh your pass.', 'error');
         }
       });
     }

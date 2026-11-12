@@ -1,16 +1,36 @@
-// Admin Portal Client Script (Direct Supabase Integration)
+// Admin Portal Client Script (Direct Supabase Integration + Supabase Auth Admin Verification)
 
-let isAdminLoggedIn = localStorage.getItem('admin_logged_in') === 'true';
+let isAdminLoggedIn = false;
+let currentAdminEmail = null;
+let adminRealtimeChannel = null;
 let html5QrScanner = null;
 let isScannerRunning = false;
 let datasheetData = [];
 let audioCtx = null;
 let recentScans = [];
 
+function escapeHtml(val) {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function generateSecureHex(byteLen) {
+  const bytes = new Uint8Array(byteLen);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
 // DOM Elements
 const adminLoginSection = document.getElementById('adminLoginSection');
 const adminDashboardSection = document.getElementById('adminDashboardSection');
-const adminLoginForm = document.getElementById('adminLoginForm');
+const adminGoogleSignInBtn = document.getElementById('adminGoogleSignInBtn');
+const adminUnauthorizedBox = document.getElementById('adminUnauthorizedBox');
+const adminUnauthorizedMsg = document.getElementById('adminUnauthorizedMsg');
+const adminSwitchAccountBtn = document.getElementById('adminSwitchAccountBtn');
 const adminAlert = document.getElementById('adminAlert');
 const adminControls = document.getElementById('adminControls');
 const adminLogoutBtn = document.getElementById('adminLogoutBtn');
@@ -126,46 +146,131 @@ function playErrorBuzzer() {
   }
 }
 
-// Session Check
+// Session Check (Verified via Supabase Auth + admin_users RLS)
 async function checkAdminSession() {
-  if (isAdminLoggedIn) {
-    showDashboard();
-    await loadDepartmentsFilter();
-    await loadStats();
-    await loadSystemConfig();
-    await loadPayments();
-    await loadDatasheet();
-    setupRealtimeSubscription();
-  } else {
+  localStorage.removeItem('admin_logged_in');
+  if (!supabase) {
+    showLogin();
+    return;
+  }
+
+  try {
+    // 1. Exchange PKCE ?code= if returning from Google OAuth
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      await supabase.auth.exchangeCodeForSession(code);
+      history.replaceState(null, '', window.location.pathname);
+    }
+
+    // 2. Handle implicit #access_token= if present
+    const hash = window.location.hash || '';
+    if (hash.includes('access_token=')) {
+      const hashParams = new URLSearchParams(hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      if (accessToken) {
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || ''
+        });
+      }
+      history.replaceState(null, '', window.location.pathname);
+    }
+
+    // 3. Listen to auth state changes
+    supabase.auth.onAuthStateChange(async (event) => {
+      if (event === 'SIGNED_OUT') {
+        resetAdminSessionState();
+        showLogin();
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        await verifyAdminUserAndLoad();
+      }
+    });
+
+    await verifyAdminUserAndLoad();
+  } catch (err) {
+    console.error('Admin auth check error:', err);
+    resetAdminSessionState();
     showLogin();
   }
 }
 
-// Login Handler
-async function handleAdminLogin(e) {
-  e.preventDefault();
-  const password = document.getElementById('adminPasscode').value;
+function resetAdminSessionState() {
+  isAdminLoggedIn = false;
+  currentAdminEmail = null;
+  if (adminRealtimeChannel && supabase) {
+    supabase.removeChannel(adminRealtimeChannel);
+    adminRealtimeChannel = null;
+  }
+}
 
-  if (password === APP_CONFIG.adminPasscode) {
-    isAdminLoggedIn = true;
-    localStorage.setItem('admin_logged_in', 'true');
-    showAdminAlert('Authenticated successfully! Welcome, Staff.', 'success');
-    showDashboard();
+async function verifyAdminUserAndLoad() {
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user || !user.email) {
+    resetAdminSessionState();
+    if (adminUnauthorizedBox) adminUnauthorizedBox.classList.add('hidden');
+    showLogin();
+    return;
+  }
+
+  const email = user.email.toLowerCase().trim();
+  const { data: adminRow, error: adminErr } = await supabase
+    .from('admin_users')
+    .select('email, role')
+    .ilike('email', email)
+    .maybeSingle();
+
+  if (adminErr || !adminRow) {
+    resetAdminSessionState();
+    showLogin();
+    if (adminUnauthorizedBox && adminUnauthorizedMsg) {
+      adminUnauthorizedMsg.textContent = `Signed in as ${email}, which is not authorized as gate staff.`;
+      adminUnauthorizedBox.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (adminUnauthorizedBox) adminUnauthorizedBox.classList.add('hidden');
+  const wasLoggedIn = isAdminLoggedIn && currentAdminEmail === adminRow.email;
+  isAdminLoggedIn = true;
+  currentAdminEmail = adminRow.email;
+  showDashboard();
+
+  if (!wasLoggedIn) {
     await loadDepartmentsFilter();
     await loadStats();
     await loadSystemConfig();
     await loadPayments();
     await loadDatasheet();
     setupRealtimeSubscription();
-  } else {
-    showAdminAlert('Invalid admin passcode.', 'error');
   }
 }
 
-function handleAdminLogout() {
+function signInAdminWithGoogle() {
+  if (!supabase) return;
+  if (window.location.protocol === 'file:') {
+    showAdminAlert('Google OAuth cannot run from file://. Open your deployed URL or http://localhost.', 'error');
+    return;
+  }
+  const redirectUrl = window.location.origin + window.location.pathname;
+  if (adminGoogleSignInBtn) {
+    adminGoogleSignInBtn.disabled = true;
+    adminGoogleSignInBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Redirecting to Google...</span>';
+  }
+  window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+}
+
+async function handleAdminLogout() {
   stopCamera();
+  try {
+    if (supabase) await supabase.auth.signOut();
+  } catch (e) {
+    console.warn('Admin sign out error:', e);
+  }
   localStorage.removeItem('admin_logged_in');
-  isAdminLoggedIn = false;
+  resetAdminSessionState();
+  if (adminUnauthorizedBox) adminUnauthorizedBox.classList.add('hidden');
   showLogin();
   showAdminAlert('Logged out of Admin Gate.', 'info');
 }
@@ -465,7 +570,7 @@ async function verifyAndMarkTicket(qrData) {
         enrollment_id: student.enrollment_id,
         status: 'Present',
         scanned_at: scanTime,
-        scanned_by: 'Admin Scanner'
+        scanned_by: currentAdminEmail || 'Admin Scanner'
       });
 
     if (insertError) {
@@ -506,26 +611,27 @@ function renderScanResult(type, data) {
       <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider inline-block mb-1.5">
         Entry Approved
       </span>
-      <h3 class="text-base font-semibold text-zinc-100">${s.name}</h3>
-      <p class="text-xs font-mono text-zinc-400 mt-0.5">${s.enrollment_id}</p>
+      <h3 class="text-base font-semibold text-zinc-100">${escapeHtml(s.name)}</h3>
+      <p class="text-xs font-mono text-zinc-400 mt-0.5">${escapeHtml(s.enrollment_id)}</p>
       
       <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-zinc-800 text-xs text-left">
         <div>
           <span class="text-zinc-500 block text-[10px]">Affiliation / Role</span>
-          <span class="text-zinc-300 font-medium truncate">${roleLabel}</span>
+          <span class="text-zinc-300 font-medium truncate">${escapeHtml(roleLabel)}</span>
         </div>
         <div>
           <span class="text-zinc-500 block text-[10px]">Contact</span>
-          <span class="text-zinc-300 font-medium">${s.phone}</span>
+          <span class="text-zinc-300 font-medium">${escapeHtml(s.phone)}</span>
         </div>
       </div>
       <p class="text-[11px] text-zinc-400 mt-3 flex items-center justify-center space-x-1">
         <i class="ph ph-clock"></i>
-        <span>Marked Present at ${new Date(data.scannedAt).toLocaleTimeString()}</span>
+        <span>Marked Present at ${escapeHtml(new Date(data.scannedAt).toLocaleTimeString())}</span>
       </p>
     `;
   } else if (type === 'payment_pending') {
     const s = data.student;
+    const safeEid = escapeHtml(s.enrollment_id);
     scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-amber-600/50 bg-amber-950/20 text-center';
     scanResultBox.innerHTML = `
       <div class="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-amber-500/20">
@@ -534,8 +640,8 @@ function renderScanResult(type, data) {
       <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
         Payment Pending Verification
       </span>
-      <h3 class="text-base font-semibold text-zinc-100">${s.name}</h3>
-      <p class="text-xs font-mono text-amber-300 mt-0.5">${s.enrollment_id} &bull; ${s.company || 'External Guest'}</p>
+      <h3 class="text-base font-semibold text-zinc-100">${escapeHtml(s.name)}</h3>
+      <p class="text-xs font-mono text-amber-300 mt-0.5">${safeEid} &bull; ${escapeHtml(s.company || 'External Guest')}</p>
 
       <div class="p-3 mt-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-left space-y-1.5">
         <div class="flex justify-between">
@@ -544,15 +650,15 @@ function renderScanResult(type, data) {
         </div>
         <div class="flex justify-between items-center">
           <span class="text-zinc-500">Submitted UTR:</span>
-          <span class="font-mono font-bold text-amber-300 select-all">${s.utr_number || 'N/A'}</span>
+          <span class="font-mono font-bold text-amber-300 select-all">${escapeHtml(s.utr_number || 'N/A')}</span>
         </div>
         <div class="flex justify-between">
           <span class="text-zinc-500">Contact:</span>
-          <span class="text-zinc-300">${s.phone}</span>
+          <span class="text-zinc-300">${escapeHtml(s.phone)}</span>
         </div>
       </div>
 
-      <button onclick="approveAndCheckIn('${s.enrollment_id}')"
+      <button onclick="approveAndCheckIn('${safeEid}')"
               class="btn-primary w-full py-2.5 px-3 mt-3.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md">
         <i class="ph-bold ph-check"></i>
         <span>Confirm Payment & Check In Now</span>
@@ -568,8 +674,8 @@ function renderScanResult(type, data) {
       <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase tracking-wider inline-block mb-1.5">
         Payment Rejected
       </span>
-      <h3 class="text-base font-semibold text-zinc-100">${s ? s.name : 'Unknown Attendee'}</h3>
-      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? s.enrollment_id : ''}</p>
+      <h3 class="text-base font-semibold text-zinc-100">${s ? escapeHtml(s.name) : 'Unknown Attendee'}</h3>
+      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? escapeHtml(s.enrollment_id) : ''}</p>
       <p class="text-xs text-zinc-400 mt-2">The ₹500 payment submission for this pass was rejected by staff.</p>
     `;
   } else if (type === 'already_scanned') {
@@ -583,13 +689,13 @@ function renderScanResult(type, data) {
       <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase tracking-wider inline-block mb-1.5">
         Duplicate Scan Rejected
       </span>
-      <h3 class="text-base font-semibold text-zinc-100">${s ? s.name : 'Unknown Attendee'}</h3>
-      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? s.enrollment_id : ''}</p>
+      <h3 class="text-base font-semibold text-zinc-100">${s ? escapeHtml(s.name) : 'Unknown Attendee'}</h3>
+      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? escapeHtml(s.enrollment_id) : ''}</p>
       
       <div class="p-3 mt-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
         <p class="font-medium text-rose-300">Ticket has already been used</p>
         <p class="text-[11px] mt-1 text-zinc-400">
-          Scanned on: <strong>${formattedTime}</strong>
+          Scanned on: <strong>${escapeHtml(formattedTime)}</strong>
         </p>
       </div>
     `;
@@ -602,8 +708,8 @@ function renderScanResult(type, data) {
       <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
         Invalid / Unrecognized Ticket
       </span>
-      <p class="text-xs text-zinc-300 font-medium mt-1">${data.message || 'Ticket not found in cloud database.'}</p>
-      ${data.scannedText ? `<div class="mt-2.5 p-2 rounded bg-black/60 border border-zinc-800 text-[11px] font-mono text-zinc-300 break-all select-all">Input: "${data.scannedText}"</div>` : ''}
+      <p class="text-xs text-zinc-300 font-medium mt-1">${escapeHtml(data.message || 'Ticket not found in cloud database.')}</p>
+      ${data.scannedText ? `<div class="mt-2.5 p-2 rounded bg-black/60 border border-zinc-800 text-[11px] font-mono text-zinc-300 break-all select-all">Input: "${escapeHtml(data.scannedText)}"</div>` : ''}
       <p class="text-[11px] text-zinc-500 mt-2">Try entering Roll Number, Name, or Phone in the box below, or check in from the DataSheet tab.</p>
     `;
   }
@@ -645,14 +751,14 @@ function addRecentScan(student, status, timestamp) {
   recentScansList.innerHTML = recentScans.map(item => `
     <div class="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 flex items-center justify-between text-xs">
       <div>
-        <p class="font-medium text-zinc-200">${item.name} <span class="font-mono text-[11px] text-zinc-500">(${item.enrollment})</span></p>
-        <p class="text-[10px] text-zinc-500">${item.dept}</p>
+        <p class="font-medium text-zinc-200">${escapeHtml(item.name)} <span class="font-mono text-[11px] text-zinc-500">(${escapeHtml(item.enrollment)})</span></p>
+        <p class="text-[10px] text-zinc-500">${escapeHtml(item.dept)}</p>
       </div>
       <div class="text-right">
         <span class="text-[10px] font-medium px-2 py-0.5 rounded ${item.status === 'VERIFIED' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-900/50' : 'bg-rose-950/60 text-rose-400 border border-rose-900/50'}">
-          ${item.status}
+          ${escapeHtml(item.status)}
         </span>
-        <p class="text-[10px] text-zinc-500 mt-0.5">${item.time}</p>
+        <p class="text-[10px] text-zinc-500 mt-0.5">${escapeHtml(item.time)}</p>
       </div>
     </div>
   `).join('');
@@ -793,32 +899,34 @@ function renderPaymentsTable() {
       statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/60">Rejected</span>';
     }
 
+    const safeEid = escapeHtml(p.enrollment_id);
+    const safeUtr = escapeHtml(p.utr_number || '');
     return `
       <tr class="hover:bg-zinc-900/40 transition">
-        <td class="py-2.5 px-3.5 font-mono text-zinc-300 font-medium whitespace-nowrap">${p.enrollment_id}</td>
-        <td class="py-2.5 px-3.5 font-semibold text-zinc-100 whitespace-nowrap">${p.name}</td>
-        <td class="py-2.5 px-3.5 text-zinc-300">${p.company || 'External Guest'}</td>
+        <td class="py-2.5 px-3.5 font-mono text-zinc-300 font-medium whitespace-nowrap">${safeEid}</td>
+        <td class="py-2.5 px-3.5 font-semibold text-zinc-100 whitespace-nowrap">${escapeHtml(p.name)}</td>
+        <td class="py-2.5 px-3.5 text-zinc-300">${escapeHtml(p.company || 'External Guest')}</td>
         <td class="py-2.5 px-3.5 text-zinc-400 whitespace-nowrap">
-          <div>${p.phone}</div>
-          <div class="text-[10px] text-zinc-500 truncate max-w-[150px]">${p.email}</div>
+          <div>${escapeHtml(p.phone)}</div>
+          <div class="text-[10px] text-zinc-500 truncate max-w-[150px]">${escapeHtml(p.email)}</div>
         </td>
         <td class="py-2.5 px-3.5 font-mono font-bold text-amber-400 whitespace-nowrap select-all">
           <div class="flex items-center space-x-1">
-            <span>${p.utr_number || 'N/A'}</span>
-            ${p.utr_number ? `<button onclick="navigator.clipboard.writeText('${p.utr_number}'); showAdminAlert('UTR copied!', 'success');" title="Copy UTR" class="p-1 text-zinc-500 hover:text-zinc-200"><i class="ph ph-copy text-xs"></i></button>` : ''}
+            <span>${safeUtr || 'N/A'}</span>
+            ${p.utr_number ? `<button onclick="navigator.clipboard.writeText('${safeUtr}'); showAdminAlert('UTR copied!', 'success');" title="Copy UTR" class="p-1 text-zinc-500 hover:text-zinc-200"><i class="ph ph-copy text-xs"></i></button>` : ''}
           </div>
         </td>
-        <td class="py-2.5 px-3.5 text-center font-bold text-emerald-400 font-mono whitespace-nowrap">₹${p.amount_paid || 500}</td>
+        <td class="py-2.5 px-3.5 text-center font-bold text-emerald-400 font-mono whitespace-nowrap">₹${escapeHtml(p.amount_paid || 500)}</td>
         <td class="py-2.5 px-3.5 whitespace-nowrap">${statusBadge}</td>
         <td class="py-2.5 px-3.5 text-center whitespace-nowrap">
           ${isPending ? `
             <div class="inline-flex space-x-1.5">
-              <button onclick="approveGuestPayment('${p.enrollment_id}')"
+              <button onclick="approveGuestPayment('${safeEid}')"
                       class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition inline-flex items-center space-x-1 shadow-sm">
                 <i class="ph-bold ph-check"></i>
                 <span>Approve</span>
               </button>
-              <button onclick="rejectGuestPayment('${p.enrollment_id}')"
+              <button onclick="rejectGuestPayment('${safeEid}')"
                       class="px-2 py-1 rounded text-xs text-rose-400 hover:bg-rose-950/40 border border-rose-900/40 transition">
                 <span>Reject</span>
               </button>
@@ -908,7 +1016,11 @@ async function loadDatasheet() {
 // Setup Realtime Updates from Supabase
 function setupRealtimeSubscription() {
   try {
-    supabase
+    if (adminRealtimeChannel && supabase) {
+      supabase.removeChannel(adminRealtimeChannel);
+      adminRealtimeChannel = null;
+    }
+    adminRealtimeChannel = supabase
       .channel('attendance-gate-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
         loadStats();
@@ -981,14 +1093,16 @@ function renderDatasheetTable() {
       payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-900 text-zinc-400 border border-zinc-800">Free (PW)</span>';
     }
 
+    const safeEid = escapeHtml(row.enrollment_id);
+    const safeYearLabel = row.year === 'Faculty' ? 'Faculty' : (row.year === 'Guest' ? 'Guest' : 'Yr ' + escapeHtml(row.year));
     return `
       <tr class="hover:bg-zinc-900/40 transition">
-        <td class="py-2.5 px-3.5 font-mono font-medium text-zinc-200 whitespace-nowrap">${row.enrollment_id}</td>
-        <td class="py-2.5 px-3.5 font-medium text-zinc-100 whitespace-nowrap">${row.name}</td>
-        <td class="py-2.5 px-3.5 text-zinc-400">${row.department}</td>
-        <td class="py-2.5 px-3.5 text-center font-medium text-zinc-300 whitespace-nowrap">${row.year === 'Faculty' ? 'Faculty' : (row.year === 'Guest' ? 'Guest' : 'Yr ' + row.year)}</td>
-        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap">${row.phone}</td>
-        <td class="py-2.5 px-3.5 text-zinc-400 truncate max-w-xs" title="${row.email}">${row.email}</td>
+        <td class="py-2.5 px-3.5 font-mono font-medium text-zinc-200 whitespace-nowrap">${safeEid}</td>
+        <td class="py-2.5 px-3.5 font-medium text-zinc-100 whitespace-nowrap">${escapeHtml(row.name)}</td>
+        <td class="py-2.5 px-3.5 text-zinc-400">${escapeHtml(row.department)}</td>
+        <td class="py-2.5 px-3.5 text-center font-medium text-zinc-300 whitespace-nowrap">${safeYearLabel}</td>
+        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap">${escapeHtml(row.phone)}</td>
+        <td class="py-2.5 px-3.5 text-zinc-400 truncate max-w-xs" title="${escapeHtml(row.email)}">${escapeHtml(row.email)}</td>
         <td class="py-2.5 px-3.5 whitespace-nowrap">${payBadge}</td>
         <td class="py-2.5 px-3.5 whitespace-nowrap">
           <span class="px-2 py-0.5 rounded text-[10px] font-medium flex items-center space-x-1.5 w-fit ${
@@ -997,13 +1111,13 @@ function renderDatasheetTable() {
               : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
           }">
             <i class="ph ${isPresent ? 'ph-check-circle text-emerald-400' : 'ph-clock text-zinc-500'}"></i>
-            <span>${row.attendance_status}</span>
+            <span>${escapeHtml(row.attendance_status)}</span>
           </span>
         </td>
-        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap text-[11px]">${scanTimeFormatted}</td>
+        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap text-[11px]">${escapeHtml(scanTimeFormatted)}</td>
         <td class="py-2.5 px-3.5 text-center whitespace-nowrap space-x-1">
           ${!isPresent ? `
-            <button onclick="handleManualCheckIn('${row.enrollment_id}')"
+            <button onclick="handleManualCheckIn('${safeEid}')"
                     title="Check in attendee"
                     class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition inline-flex items-center space-x-1 shadow-sm">
               <i class="ph-bold ph-check text-xs"></i>
@@ -1012,7 +1126,7 @@ function renderDatasheetTable() {
           ` : `
             <span class="text-[11px] text-emerald-400 font-medium px-2 py-0.5">Admitted</span>
           `}
-          <button onclick="handleDeleteStudent('${row.enrollment_id}', '${encodeURIComponent(row.name)}')"
+          <button onclick="handleDeleteStudent('${safeEid}', '${encodeURIComponent(row.name || '')}')"
                   title="Delete student record"
                   class="px-2 py-1 rounded text-zinc-400 hover:text-rose-400 hover:bg-rose-950/30 border border-transparent hover:border-rose-900/40 text-xs transition inline-flex items-center space-x-1">
             <i class="ph ph-trash text-xs"></i>
@@ -1184,8 +1298,7 @@ async function toggleRegistrationGateway(key) {
 function openManualEntryModal() {
   const modal = document.getElementById('manualEntryModal');
   if (!modal) return;
-  const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase();
-  document.getElementById('manualTicketToken').value = `TKT-${randomHex}`;
+  document.getElementById('manualTicketToken').value = `TKT-${generateSecureHex(8)}`;
   document.getElementById('manualEnrollmentId').value = '';
   document.getElementById('manualName').value = '';
   document.getElementById('manualEmail').value = '';
@@ -1231,7 +1344,7 @@ function setManualType(type) {
     if (guestFields) guestFields.classList.remove('hidden');
     if (enrollLabel) enrollLabel.innerHTML = 'Guest / Ref ID <span class="text-rose-500">*</span>';
     if (enrollInput && !enrollInput.value) {
-      enrollInput.value = 'GST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      enrollInput.value = 'GST-' + generateSecureHex(3);
     }
   }
 }
@@ -1311,7 +1424,8 @@ async function handleManualEntrySubmit(e) {
 
 // Setup Event Listeners
 function setupEventListeners() {
-  if (adminLoginForm) adminLoginForm.addEventListener('submit', handleAdminLogin);
+  if (adminGoogleSignInBtn) adminGoogleSignInBtn.addEventListener('click', signInAdminWithGoogle);
+  if (adminSwitchAccountBtn) adminSwitchAccountBtn.addEventListener('click', handleAdminLogout);
   if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', handleAdminLogout);
 
   // Response Gateways Controls
