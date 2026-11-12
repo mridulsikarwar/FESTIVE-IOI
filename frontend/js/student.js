@@ -1,771 +1,91 @@
-// Student Portal Client Script (Direct Supabase Integration & Google OAuth)
+// FESTIVE IOI - Multi-Club, Multi-Event & Group Ticketing Student Portal
 
-let appConfig = {
-  allowedDomains: APP_CONFIG.allowedDomains || [APP_CONFIG.allowedDomain || 'pwioi.com'],
-  allowedDomain: APP_CONFIG.allowedDomain || 'pwioi.com',
-  googleClientId: APP_CONFIG.googleClientId || '',
-  isGoogleConfigured: Boolean(APP_CONFIG.googleClientId)
-};
+let currentAuthUser = null;
+let currentProfile = null; // row from public.attendees
+let allClubs = [];
+let allEvents = [];
+let eventRegCounts = {};
+let myRegistrations = [];
+let selectedClubId = 'ALL';
+let activeModalEvent = null;
+let activeParticipationMode = 'solo';
+let lookedUpTeam = null;
+let studentLiveChannel = null;
 
-let currentStudent = null;
-
-let systemConfig = {
-  pw_registration_open: 'true',
-  guest_registration_open: 'true'
-};
-
-// Load system configuration (Registration gate states)
-async function loadSystemConfig() {
-  if (!supabase) return;
-  try {
-    const { data, error } = await supabase.from('system_config').select('*');
-    if (!error && data) {
-      data.forEach(item => {
-        systemConfig[item.key] = item.value;
-      });
-    }
-  } catch (e) {
-    console.warn('System config load notice:', e);
-  }
+function escapeHtml(val) {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-// Domain validation helpers
 function isDomainAllowed(email) {
   if (!email || !email.includes('@')) return false;
-  if (!appConfig.allowedDomains || appConfig.allowedDomains.length === 0) return true;
-  if (appConfig.allowedDomains.includes('*')) return true;
-  const userDomain = email.split('@')[1].toLowerCase().trim();
-  return appConfig.allowedDomains.some(d => d.toLowerCase().trim() === userDomain);
-}
-
-function getAllowedDomainsLabel() {
-  if (!appConfig.allowedDomains || appConfig.allowedDomains.includes('*')) return 'All domains';
-  return appConfig.allowedDomains.map(d => '@' + d).join(' or ');
+  const domain = email.split('@')[1].toLowerCase().trim();
+  const allowed = APP_CONFIG.allowedDomains || ['pwioi.com', 'pw.live'];
+  return allowed.some(d => d.toLowerCase().trim() === domain);
 }
 
 // DOM Elements
 const authSection = document.getElementById('authSection');
-const regSection = document.getElementById('regSection');
-const ticketSection = document.getElementById('ticketSection');
+const profileSetupSection = document.getElementById('profileSetupSection');
+const portalSection = document.getElementById('portalSection');
 const alertBox = document.getElementById('alertBox');
 const userHeaderProfile = document.getElementById('userHeaderProfile');
 const headerUserName = document.getElementById('headerUserName');
 const signOutBtn = document.getElementById('signOutBtn');
 const googleSignInBtn = document.getElementById('googleSignInBtn');
 
-// Check for OAuth errors in URL returned by provider
-function checkUrlAuthErrors() {
-  const hash = window.location.hash || '';
-  const search = window.location.search || '';
-  const params = new URLSearchParams(search.substring(1));
-  const hashParams = new URLSearchParams(hash.substring(1));
-
-  const errorDesc = params.get('error_description') || hashParams.get('error_description') || params.get('error') || hashParams.get('error');
-  if (errorDesc) {
-    const msg = decodeURIComponent(errorDesc).replace(/\+/g, ' ');
-    showAlert(`Authentication notice: ${msg}`, 'error');
-    const errBox = document.getElementById('googleAuthError');
-    if (errBox) {
-      errBox.textContent = `Google Auth Notice: ${msg}`;
-      errBox.classList.remove('hidden');
-    }
-  }
-}
-
-// Initialize application
-async function initApp() {
-  console.log("FESTIVE-IOI initializing... readyState:", document.readyState, "URL hash:", window.location.hash ? "present" : "none");
-  checkUrlAuthErrors();
-  setupEventListeners();
-  setupDomainDisplay();
-  await loadSystemConfig();
-  loadDepartments();
-  initAuth();
-  initGoogleGis();
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initApp);
-} else {
-  initApp();
-}
-
-// Setup allowed domain labels
-function setupDomainDisplay() {
-  const label = getAllowedDomainsLabel();
-  document.querySelectorAll('.allowedDomainSpan').forEach(el => el.textContent = label);
-  const domainText = document.getElementById('domainText');
-  if (domainText) domainText.textContent = label;
-}
-
-// Populate Departments directly from Supabase
-async function loadDepartments() {
-  const fallbackDepartments = [
-    { name: "School of Technology", code: "SOT" },
-    { name: "School of Management", code: "SOM" },
-    { name: "School of Healthcare", code: "SOH" }
-  ];
-
-  try {
-    const { data: departments, error } = await supabase
-      .from('departments')
-      .select('name, code')
-      .order('name', { ascending: true });
-
-    const list = (departments && departments.length > 0) ? departments : fallbackDepartments;
-    const select = document.getElementById('regDepartment');
-    if (select) {
-      select.innerHTML = '<option value="">-- Select Department --</option>';
-      list.forEach(d => {
-        const opt = document.createElement('option');
-        const label = `${d.name} (${d.code})`;
-        opt.value = label;
-        opt.textContent = label;
-        select.appendChild(opt);
-      });
-    }
-  } catch (err) {
-    console.error('Failed to load departments from Supabase:', err);
-    const select = document.getElementById('regDepartment');
-    if (select) {
-      select.innerHTML = '<option value="">-- Select Department --</option>';
-      fallbackDepartments.forEach(d => {
-        const opt = document.createElement('option');
-        const label = `${d.name} (${d.code})`;
-        opt.value = label;
-        opt.textContent = label;
-        select.appendChild(opt);
-      });
-    }
-  }
-}
-
-// Calculate direct Supabase Authorize URL
-function getGoogleAuthUrl() {
-  const redirectUrl = window.location.origin + window.location.pathname;
-  return `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
-}
-
-// Sign in with Google (Direct Navigation OAuth flow)
-function signInWithGoogle(e) {
-  if (e) e.preventDefault();
-
-  if (window.location.protocol === 'file:') {
-    showAlert("Google OAuth cannot run from a local file:// address. Open http://localhost:8080 or your live Vercel URL.", "error");
-    return;
-  }
-
-  const authUrl = getGoogleAuthUrl();
-  console.log("Redirecting directly to Supabase Google Authorize URL:", authUrl);
-
-  const btn = document.getElementById('googleSignInBtn');
-  if (btn) {
-    btn.innerHTML = `<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Redirecting to Google...</span>`;
-  }
-
-  window.location.href = authUrl;
-}
-
-// Return verified user from active Supabase Auth session (never trust localStorage)
-async function getVerifiedAuthUser() {
-  if (!supabase) return null;
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (!error && user && user.email) return user;
-  } catch (e) {
-    console.warn('Auth user verification notice:', e);
-  }
-  return null;
-}
-
-// Handle Authenticated User (from verified Supabase Auth session)
-async function handleAuthenticatedUser(user) {
-  const email = (user?.email || '').toLowerCase().trim();
-  const metadata = user?.user_metadata || {};
-  const name = metadata.full_name || metadata.name || user?.displayName || (email.split('@')[0]);
-
-  if (!email) {
-    showAlert('Could not retrieve email from Google authentication.', 'error');
-    return;
-  }
-
-  // Clear legacy unverified localStorage auth keys
-  localStorage.removeItem('student_email');
-  localStorage.removeItem('student_name');
-  updateHeaderUser(name);
-
-  // Clean URL hash or query if present from OAuth redirect
-  if (window.location.hash && (window.location.hash.includes('access_token') || window.location.hash.includes('id_token') || window.location.hash.includes('error'))) {
-    history.replaceState(null, '', window.location.pathname);
-  }
-  if (window.location.search && (window.location.search.includes('code=') || window.location.search.includes('error='))) {
-    history.replaceState(null, '', window.location.pathname);
-  }
-
-  // Query verified student/guest profile in Supabase
-  await loadStudentProfile(email, name);
-}
-
-// Query Supabase for student record
-async function loadStudentProfile(email, name) {
-  try {
-    const { data: student, error } = await supabase
-      .from('students')
-      .select('*, attendance(*)')
-      .eq('email', email)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (student) {
-      currentStudent = student;
-      const isScanned = Array.isArray(student.attendance) ? student.attendance.length > 0 : !!student.attendance;
-      const scanRecord = Array.isArray(student.attendance) ? student.attendance[0] : student.attendance;
-      currentStudent.attendance_status = isScanned ? 'Present' : 'Pending';
-      currentStudent.scanned_at = isScanned && scanRecord ? scanRecord.scanned_at : null;
-
-      // Check Payment Verification Status
-      if (student.payment_status === 'pending_verification') {
-        showPendingVerification(currentStudent);
-      } else {
-        await renderTicket(currentStudent);
-        showApprovedTicket();
-      }
-      showSection('ticket');
-      subscribeToStudentUpdates(student.enrollment_id);
-    } else {
-      showRegistrationForm(email, name);
-    }
-  } catch (err) {
-    console.error('Supabase query error:', err);
-    showRegistrationForm(email, name);
-  }
-}
-
-// Initialize Auth listeners & session checks
-async function initAuth() {
-  if (supabase) {
-    // 1. Check if URL search has ?code= (PKCE flow return)
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    if (code) {
-      console.log("Detected OAuth code in URL. Exchanging for session...");
-      try {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) throw error;
-        if (data && data.user) {
-          console.log("PKCE code exchanged successfully for user:", data.user.email);
-          await handleAuthenticatedUser(data.user);
-          return;
-        }
-      } catch (err) {
-        console.warn("exchangeCodeForSession error:", err);
-      }
-    }
-
-    // 2. Check if URL hash has #access_token= (Implicit flow return)
-    const hash = window.location.hash || '';
-    if (hash && hash.includes('access_token=')) {
-      console.log("Detected access token in URL hash. Verifying session with Supabase...");
-      try {
-        const hashParams = new URLSearchParams(hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        if (accessToken) {
-          const { data: sessionData, error: setErr } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken || ''
-          });
-          if (setErr) throw setErr;
-          const verifiedUser = sessionData?.user || await getVerifiedAuthUser();
-          if (verifiedUser && verifiedUser.email) {
-            await handleAuthenticatedUser(verifiedUser);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("Hash token verification error:", err);
-      }
-    }
-
-    // 3. Listen for auth changes
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth State Changed:", event, session?.user?.email);
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session && session.user) {
-        await handleAuthenticatedUser(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        currentStudent = null;
-        updateHeaderUser(null);
-        showSection('auth');
-      }
-    });
-
-    // 4. Check active verified Supabase session
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (!error && session && session.user) {
-        const verifiedUser = await getVerifiedAuthUser();
-        if (verifiedUser) {
-          console.log("Active Supabase session verified:", verifiedUser.email);
-          await handleAuthenticatedUser(verifiedUser);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('Error reading Supabase session:', e);
-    }
-  }
-
-  localStorage.removeItem('student_email');
-  localStorage.removeItem('student_name');
-  showSection('auth');
-}
-
-// Optional Google Identity Services (GIS) One Tap / Button
-function initGoogleGis() {
-  if (window.google && appConfig.googleClientId) {
-    try {
-      google.accounts.id.initialize({
-        client_id: appConfig.googleClientId,
-        callback: async (response) => {
-          if (response.credential && supabase) {
-            try {
-              const { data, error } = await supabase.auth.signInWithIdToken({
-                provider: 'google',
-                token: response.credential
-              });
-              if (error) throw error;
-              if (data && data.user) {
-                await handleAuthenticatedUser(data.user);
-              }
-            } catch (err) {
-              console.warn('Google ID token sign-in notice:', err);
-              showAlert('Please sign in using the "Continue with Google" button above.', 'error');
-            }
-          }
-        }
-      });
-
-      const wrapper = document.getElementById('googleBtnWrapper');
-      if (wrapper) {
-        google.accounts.id.renderButton(wrapper, {
-          theme: 'outline',
-          size: 'large',
-          width: 320,
-          text: 'continue_with'
-        });
-      }
-    } catch (e) {
-      console.warn('Google Identity Services init notice:', e);
-    }
-  }
-}
-
-// Show Registration Form (PW Community vs External Guest)
-function showRegistrationForm(email, name) {
-  const isPw = isDomainAllowed(email);
-  const pwContainer = document.getElementById('pwRegContainer');
-  const guestContainer = document.getElementById('guestRegContainer');
-  const closedCard = document.getElementById('regClosedCard');
-  const closedMsg = document.getElementById('regClosedMessage');
-
-  // Check if registrations are paused by admin
-  if (isPw && systemConfig.pw_registration_open === 'false') {
-    if (pwContainer) pwContainer.classList.add('hidden');
-    if (guestContainer) guestContainer.classList.add('hidden');
-    if (closedCard) closedCard.classList.remove('hidden');
-    if (closedMsg) closedMsg.textContent = 'Registrations for PW Community students & faculty are currently closed by the event administrators.';
-    showSection('reg');
-    return;
-  }
-
-  if (!isPw && systemConfig.guest_registration_open === 'false') {
-    if (pwContainer) pwContainer.classList.add('hidden');
-    if (guestContainer) guestContainer.classList.add('hidden');
-    if (closedCard) closedCard.classList.remove('hidden');
-    if (closedMsg) closedMsg.textContent = 'Registrations for external attendees are currently closed by the event administrators.';
-    showSection('reg');
-    return;
-  }
-
-  if (closedCard) closedCard.classList.add('hidden');
-
-  if (isPw) {
-    if (pwContainer) pwContainer.classList.remove('hidden');
-    if (guestContainer) guestContainer.classList.add('hidden');
-    const emailInput = document.getElementById('regEmail');
-    const nameInput = document.getElementById('regName');
-    if (emailInput) emailInput.value = email;
-    if (nameInput) nameInput.value = name;
-  } else {
-    if (guestContainer) guestContainer.classList.remove('hidden');
-    if (pwContainer) pwContainer.classList.add('hidden');
-    const guestEmailInput = document.getElementById('guestEmail');
-    const guestNameInput = document.getElementById('guestName');
-    if (guestEmailInput) guestEmailInput.value = email;
-    if (guestNameInput) guestNameInput.value = name;
-
-    // Render dynamic UPI QR code for ₹500
-    const upiId = APP_CONFIG.upiId || 'payalyadav210106@okaxis';
-    const payeeName = encodeURIComponent(APP_CONFIG.upiPayeeName || 'FESTIVE IOI');
-    const upiUri = `upi://pay?pa=${upiId}&pn=${payeeName}&am=500&cu=INR&tn=FESTIVE-GUEST`;
-    renderGuestUpiQr(upiUri);
-    const intentLink = document.getElementById('guestUpiIntentLink');
-    if (intentLink) intentLink.href = upiUri;
-  }
-
-  showSection('reg');
-}
-
-// Render dynamic UPI QR in guest form
-function renderGuestUpiQr(uri) {
-  const qrBox = document.getElementById('guestUpiQr');
-  if (!qrBox) return;
-  qrBox.innerHTML = '';
-  try {
-    new QRCode(qrBox, {
-      text: uri,
-      width: 112,
-      height: 112,
-      colorDark: "#1e1b4b",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.M
-    });
-  } catch (e) {
-    console.warn("QR render error:", e);
-  }
-}
-
-// Show Pending Verification Card
-function showPendingVerification(student) {
-  const pName = document.getElementById('pendingName');
-  const pComp = document.getElementById('pendingCompany');
-  const pUtr = document.getElementById('pendingUtr');
-  const pRef = document.getElementById('pendingRefId');
-
-  if (pName) pName.textContent = student.name;
-  if (pComp) pComp.textContent = student.company || 'External Guest';
-  if (pUtr) pUtr.textContent = student.utr_number || 'Under Review';
-  if (pRef) pRef.textContent = student.enrollment_id;
-
-  const pendingCard = document.getElementById('pendingVerificationCard');
-  const approvedCard = document.getElementById('approvedTicketCard');
-  if (pendingCard) pendingCard.classList.remove('hidden');
-  if (approvedCard) approvedCard.classList.add('hidden');
-}
-
-// Show Approved Ticket Card
-function showApprovedTicket() {
-  const pendingCard = document.getElementById('pendingVerificationCard');
-  const approvedCard = document.getElementById('approvedTicketCard');
-  if (pendingCard) pendingCard.classList.add('hidden');
-  if (approvedCard) approvedCard.classList.remove('hidden');
-}
-
-function getRegistrationErrorMessage(err) {
-  const msg = String(err?.message || '');
-  const details = String(err?.details || '');
-  const combined = `${msg} ${details}`.toLowerCase();
-
-  if (err?.code === '23505' || combined.includes('duplicate key')) {
-    if (combined.includes('students_pkey') || combined.includes('enrollment_id')) {
-      return 'This Enrollment ID is already registered!';
-    }
-    if (combined.includes('phone')) {
-      return 'This phone number is already registered!';
-    }
-    if (combined.includes('email')) {
-      return 'This email is already registered!';
-    }
-    if (combined.includes('utr_number') || combined.includes('utr')) {
-      return 'This 12-digit UTR has already been submitted!';
-    }
-    return 'A record with these details is already registered.';
-  }
-  return msg || 'Database error';
-}
-
-// Handle PW Student / Faculty Registration (Free)
-async function handlePwRegistration(e) {
-  e.preventDefault();
-  const submitBtn = document.getElementById('submitPwRegBtn');
-  submitBtn.disabled = true;
-  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Registering in Cloud DB...</span>';
-
-  try {
-    const authUser = await getVerifiedAuthUser();
-    if (!authUser || !authUser.email) {
-      showAlert('Please sign in with Google before registering.', 'error');
-      showSection('auth');
-      return;
-    }
-
-    const email = authUser.email.toLowerCase().trim();
-    const enrollment_id = document.getElementById('regEnrollmentId').value.trim().toUpperCase();
-    const name = document.getElementById('regName').value.trim();
-    const department = document.getElementById('regDepartment').value;
-    const year = document.getElementById('regYear').value;
-    const phone = document.getElementById('regPhone').value.trim();
-
-    // Server-side Postgres trigger generates ticket_token and enforces domain/payment rules
-    const { data: newStudent, error: insertError } = await supabase
-      .from('students')
-      .insert({
-        enrollment_id,
-        name,
-        department,
-        year,
-        phone,
-        email,
-        ticket_token: ''
-      })
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
-
-    if (window.confetti) {
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-    }
-
-    currentStudent = {
-      ...newStudent,
-      attendance_status: 'Pending',
-      scanned_at: null
-    };
-
-    await renderTicket(currentStudent);
-    showApprovedTicket();
-    showSection('ticket');
-    subscribeToStudentUpdates(newStudent.enrollment_id);
-    showAlert('🎉 Registration complete! Here is your official entry pass.', 'success');
-  } catch (err) {
-    console.error('PW Registration error:', err);
-    showAlert('Registration error: ' + getRegistrationErrorMessage(err), 'error');
-  } finally {
-    resetPwSubmitBtn(submitBtn);
-  }
-}
-
-function resetPwSubmitBtn(btn) {
-  if (!btn) return;
-  btn.disabled = false;
-  btn.innerHTML = '<span>Generate Entry Pass</span><i class="ph-bold ph-arrow-right text-xs"></i>';
-}
-
-// Handle External Attendee (Guest) Registration (₹500 Manual UPI)
-async function handleGuestRegistration(e) {
-  e.preventDefault();
-  const name = document.getElementById('guestName').value.trim();
-  const phone = document.getElementById('guestPhone').value.trim();
-  const companySelect = document.getElementById('guestCompanySelect').value;
-  let company = companySelect;
-  if (companySelect === 'Others') {
-    company = document.getElementById('guestCustomCompany').value.trim() || 'Others';
-  }
-
-  const utr = document.getElementById('guestUtr').value.trim();
-
-  // Validate UTR: 12 numeric digits
-  if (!/^\d{12}$/.test(utr)) {
-    showAlert('Please enter a valid 12-digit numeric UPI UTR / Reference number.', 'error');
-    return;
-  }
-
-  const submitBtn = document.getElementById('submitGuestRegBtn');
-  submitBtn.disabled = true;
-  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Submitting Registration & UTR...</span>';
-
-  try {
-    const authUser = await getVerifiedAuthUser();
-    if (!authUser || !authUser.email) {
-      showAlert('Please sign in with Google before registering.', 'error');
-      showSection('auth');
-      return;
-    }
-
-    const email = authUser.email.toLowerCase().trim();
-
-    // Server-side Postgres trigger generates GST-ID, ticket_token, and forces pending_verification
-    const { data: newStudent, error: insertError } = await supabase
-      .from('students')
-      .insert({
-        enrollment_id: '',
-        name,
-        phone,
-        email,
-        company,
-        utr_number: utr,
-        ticket_token: ''
-      })
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
-
-    currentStudent = {
-      ...newStudent,
-      attendance_status: 'Pending',
-      scanned_at: null
-    };
-
-    showPendingVerification(currentStudent);
-    showSection('ticket');
-    subscribeToStudentUpdates(newStudent.enrollment_id);
-    showAlert('✅ Payment submitted! Your pass is pending admin approval.', 'success');
-  } catch (err) {
-    console.error('Guest Registration error:', err);
-    showAlert('Registration error: ' + getRegistrationErrorMessage(err), 'error');
-  } finally {
-    resetGuestSubmitBtn(submitBtn);
-  }
-}
-
-function resetGuestSubmitBtn(btn) {
-  if (!btn) return;
-  btn.disabled = false;
-  btn.innerHTML = '<span>Submit Registration & Verify Payment</span><i class="ph-bold ph-arrow-right text-xs"></i>';
-}
-
-// Generate QR Code using client-side QRCode generator
-async function generateQrDataUrl(text) {
-  return new Promise((resolve) => {
-    const tempDiv = document.createElement('div');
-    new QRCode(tempDiv, {
-      text: text,
-      width: 280,
-      height: 280,
-      colorDark: "#1e1b4b",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
-    });
-
-    setTimeout(() => {
-      const img = tempDiv.querySelector('img');
-      if (img && img.src) {
-        resolve(img.src);
-      } else {
-        const canvas = tempDiv.querySelector('canvas');
-        resolve(canvas ? canvas.toDataURL() : '');
-      }
-    }, 100);
-  });
-}
-
-// Render Ticket Details
-async function renderTicket(student) {
-  document.getElementById('tktName').textContent = student.name;
-  document.getElementById('tktEnrollment').textContent = student.enrollment_id;
-  
-  // Format Department / Organization & Year / Category
-  if (student.user_type === 'guest') {
-    document.getElementById('tktDeptYear').textContent = `${student.company || 'External'} (Guest Pass)`;
-  } else if (student.year === 'Faculty') {
-    document.getElementById('tktDeptYear').textContent = `${student.department} (Faculty)`;
-  } else {
-    document.getElementById('tktDeptYear').textContent = `${student.department} (Year ${student.year})`;
-  }
-
-  document.getElementById('tktPhone').textContent = student.phone;
-  document.getElementById('tktTokenDisplay').textContent = student.ticket_token;
-
-  // Generate QR payload
-  const qrPayload = JSON.stringify({
-    ticket_token: student.ticket_token,
-    enrollment_id: student.enrollment_id
-  });
-
-  const qrDataUrl = await generateQrDataUrl(qrPayload);
-  if (qrDataUrl) {
-    document.getElementById('tktQrImage').src = qrDataUrl;
-  }
-
-  // Update status badge
-  const badge = document.getElementById('tktStatusBadge');
-  const icon = document.getElementById('tktStatusIcon');
-  const text = document.getElementById('tktStatusText');
-
-  if (student.attendance_status === 'Present') {
-    badge.className = 'mt-2.5 px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200';
-    icon.className = 'ph-bold ph-check-circle text-emerald-600 text-xs';
-    const scanTimeStr = student.scanned_at ? ` at ${new Date(student.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
-    text.textContent = `Checked In (${scanTimeStr.trim() || 'Verified'})`;
-  } else {
-    badge.className = 'mt-2.5 px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1.5 bg-zinc-100 text-zinc-700 border border-zinc-200';
-    icon.className = 'ph-bold ph-clock text-zinc-500 text-xs';
-    text.textContent = 'Pending Gate Scan';
-  }
-}
-
-// Real-time listener: Handles both payment approval AND gate scan events
-let studentLiveSubscription = null;
-function subscribeToStudentUpdates(enrollmentId) {
-  if (!supabase || !enrollmentId) return;
-  try {
-    if (studentLiveSubscription) {
-      supabase.removeChannel(studentLiveSubscription);
-      studentLiveSubscription = null;
-    }
-
-    studentLiveSubscription = supabase
-      .channel(`student-live-${enrollmentId}`)
-      // 1. Payment status approved update
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'students',
-        filter: `enrollment_id=eq.${enrollmentId}`
-      }, async (payload) => {
-        console.log('Student record updated:', payload);
-        if (payload.new && payload.new.payment_status === 'approved') {
-          currentStudent = {
-            ...currentStudent,
-            ...payload.new
-          };
-          await renderTicket(currentStudent);
-          showApprovedTicket();
-          if (window.confetti) {
-            confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-          }
-          showAlert('🎉 Your ₹500 payment has been APPROVED! Official pass activated.', 'success');
-        }
-      })
-      // 2. Gate scan attendance insert
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'attendance',
-        filter: `enrollment_id=eq.${enrollmentId}`
-      }, (payload) => {
-        console.log('Gate scan event received:', payload);
-        if (currentStudent && currentStudent.enrollment_id === enrollmentId) {
-          currentStudent.attendance_status = 'Present';
-          currentStudent.scanned_at = payload.new ? payload.new.scanned_at : new Date().toISOString();
-          renderTicket(currentStudent);
-          if (window.confetti) {
-            confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-          }
-          showAlert('🎉 Welcome to FESTIVE IOI! Attendance verified at entrance gate.', 'success');
-        }
-      })
-      .subscribe();
-  } catch (e) {
-    console.warn('Realtime subscription notice:', e);
-  }
-}
-
-// Section Switcher
-function showSection(section) {
+const discoverView = document.getElementById('discoverView');
+const myPassesView = document.getElementById('myPassesView');
+const navDiscoverBtn = document.getElementById('navDiscoverBtn');
+const navTicketsBtn = document.getElementById('navTicketsBtn');
+const myPassesBadge = document.getElementById('myPassesBadge');
+
+function showSection(name) {
   authSection.classList.add('hidden');
-  regSection.classList.add('hidden');
-  ticketSection.classList.add('hidden');
-
-  if (section === 'auth') authSection.classList.remove('hidden');
-  if (section === 'reg') regSection.classList.remove('hidden');
-  if (section === 'ticket') ticketSection.classList.remove('hidden');
+  profileSetupSection.classList.add('hidden');
+  portalSection.classList.add('hidden');
+  if (name === 'auth') authSection.classList.remove('hidden');
+  if (name === 'profile') profileSetupSection.classList.remove('hidden');
+  if (name === 'portal') portalSection.classList.remove('hidden');
 }
 
-// Update Header User Profile
+function switchPortalTab(tab) {
+  const active = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
+  const inactive = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200';
+  if (tab === 'discover') {
+    navDiscoverBtn.className = active;
+    navTicketsBtn.className = inactive;
+    discoverView.classList.remove('hidden');
+    myPassesView.classList.add('hidden');
+  } else {
+    navTicketsBtn.className = active;
+    navDiscoverBtn.className = inactive;
+    discoverView.classList.add('hidden');
+    myPassesView.classList.remove('hidden');
+  }
+}
+
+function showAlert(message, type = 'info') {
+  alertBox.className = 'max-w-2xl mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all';
+  let iconHtml = '<i class="ph ph-info text-sm mt-0.5 text-zinc-400"></i>';
+  if (type === 'error') {
+    alertBox.classList.add('bg-rose-950/40', 'border-rose-900/60', 'text-rose-200');
+    iconHtml = '<i class="ph ph-warning-circle text-sm text-rose-400 mt-0.5"></i>';
+  } else if (type === 'success') {
+    alertBox.classList.add('bg-emerald-950/40', 'border-emerald-900/60', 'text-emerald-200');
+    iconHtml = '<i class="ph ph-check-circle text-sm text-emerald-400 mt-0.5"></i>';
+  } else {
+    alertBox.classList.add('bg-zinc-900', 'border-zinc-800', 'text-zinc-300');
+  }
+  alertBox.innerHTML = `${iconHtml}<span>${escapeHtml(message)}</span>`;
+  alertBox.classList.remove('hidden');
+  setTimeout(() => alertBox.classList.add('hidden'), 5000);
+}
+
 function updateHeaderUser(name) {
   if (name) {
     headerUserName.textContent = name;
@@ -777,125 +97,726 @@ function updateHeaderUser(name) {
   }
 }
 
-// Sign out
-async function handleSignOut() {
+async function getVerifiedAuthUser() {
+  if (!supabase) return null;
   try {
-    if (studentLiveSubscription && supabase) {
-      supabase.removeChannel(studentLiveSubscription);
-      studentLiveSubscription = null;
-    }
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (!error && user && user.email) return user;
   } catch (e) {
-    console.warn('Sign out error:', e);
+    console.warn('Auth user check notice:', e);
   }
+  return null;
+}
+
+function getGoogleAuthUrl() {
+  const redirectUrl = window.location.origin + window.location.pathname;
+  return `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+}
+
+function signInWithGoogle(e) {
+  if (e) e.preventDefault();
+  if (window.location.protocol === 'file:') {
+    showAlert('Google OAuth cannot run from file://. Open your deployed URL or http://localhost.', 'error');
+    return;
+  }
+  if (googleSignInBtn) {
+    googleSignInBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Redirecting to Google...</span>';
+  }
+  window.location.href = getGoogleAuthUrl();
+}
+
+async function initAuth() {
   localStorage.removeItem('student_email');
   localStorage.removeItem('student_name');
-  currentStudent = null;
-  updateHeaderUser(null);
-  showSection('auth');
-  showAlert('You have been signed out successfully.', 'info');
-}
-
-// Alerts helper
-function showAlert(message, type = 'info') {
-  alertBox.className = 'max-w-lg mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all';
-
-  let iconHtml = '<i class="ph ph-info text-sm mt-0.5 text-zinc-400"></i>';
-  if (type === 'error') {
-    alertBox.classList.add('bg-rose-950/40', 'border-rose-900/60', 'text-rose-200');
-    iconHtml = '<i class="ph ph-warning-circle text-sm text-rose-400 mt-0.5"></i>';
-  } else if (type === 'success') {
-    alertBox.classList.add('bg-emerald-950/40', 'border-emerald-900/60', 'text-emerald-200');
-    iconHtml = '<i class="ph ph-check-circle text-sm text-emerald-400 mt-0.5"></i>';
-  } else {
-    alertBox.classList.add('bg-zinc-900', 'border-zinc-800', 'text-zinc-300');
+  if (!supabase) {
+    showSection('auth');
+    return;
   }
 
-  alertBox.innerHTML = `${iconHtml}<span>${message}</span>`;
-  alertBox.scrollIntoView({ behavior: 'smooth' });
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      await supabase.auth.exchangeCodeForSession(code);
+      history.replaceState(null, '', window.location.pathname);
+    }
 
-  setTimeout(() => {
-    alertBox.classList.add('hidden');
-  }, 5000);
+    const hash = window.location.hash || '';
+    if (hash.includes('access_token=')) {
+      const hp = new URLSearchParams(hash.substring(1));
+      const accessToken = hp.get('access_token');
+      const refreshToken = hp.get('refresh_token');
+      if (accessToken) {
+        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' });
+      }
+      history.replaceState(null, '', window.location.pathname);
+    }
+
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        currentAuthUser = null;
+        currentProfile = null;
+        updateHeaderUser(null);
+        showSection('auth');
+      } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        await handleAuthenticatedUser(session.user);
+      }
+    });
+
+    const user = await getVerifiedAuthUser();
+    if (user) {
+      await handleAuthenticatedUser(user);
+    } else {
+      showSection('auth');
+    }
+  } catch (err) {
+    console.error('Init auth error:', err);
+    showSection('auth');
+  }
 }
 
-// Setup Event Listeners
+function initGoogleGis() {
+  if (window.google && APP_CONFIG.googleClientId) {
+    try {
+      google.accounts.id.initialize({
+        client_id: APP_CONFIG.googleClientId,
+        callback: async (response) => {
+          if (response.credential && supabase) {
+            try {
+              const { data, error } = await supabase.auth.signInWithIdToken({
+                provider: 'google',
+                token: response.credential
+              });
+              if (error) throw error;
+              if (data?.user) await handleAuthenticatedUser(data.user);
+            } catch (err) {
+              showAlert('Please sign in using the "Continue with Google" button above.', 'error');
+            }
+          }
+        }
+      });
+      const wrapper = document.getElementById('googleBtnWrapper');
+      if (wrapper) {
+        google.accounts.id.renderButton(wrapper, { theme: 'outline', size: 'large', width: 320, text: 'continue_with' });
+      }
+    } catch (e) {}
+  }
+}
+
+async function handleAuthenticatedUser(user) {
+  currentAuthUser = user;
+  const email = user.email.toLowerCase().trim();
+  const meta = user.user_metadata || {};
+  const displayName = meta.full_name || meta.name || email.split('@')[0];
+  updateHeaderUser(displayName);
+
+  const { data: profile, error } = await supabase
+    .from('attendees')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (!error && profile) {
+    currentProfile = profile;
+    await enterPortal();
+  } else {
+    showProfileSetup(email, displayName);
+  }
+}
+
+async function loadDepartments() {
+  const fallback = [
+    { name: 'School of Technology', code: 'SOT' },
+    { name: 'School of Management', code: 'SOM' },
+    { name: 'School of Healthcare', code: 'SOH' }
+  ];
+  try {
+    const { data } = await supabase.from('departments').select('name, code').order('name');
+    const list = (data && data.length > 0) ? data : fallback;
+    const select = document.getElementById('profDepartment');
+    if (select) {
+      select.innerHTML = '<option value="">-- Select Department --</option>';
+      list.forEach(d => {
+        const opt = document.createElement('option');
+        const label = `${d.name} (${d.code})`;
+        opt.value = label;
+        opt.textContent = label;
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {}
+}
+
+function showProfileSetup(email, name) {
+  const isPw = isDomainAllowed(email);
+  const pwBox = document.getElementById('pwProfileContainer');
+  const guestBox = document.getElementById('guestProfileContainer');
+  if (isPw) {
+    pwBox.classList.remove('hidden');
+    guestBox.classList.add('hidden');
+    document.getElementById('profEmail').value = email;
+    document.getElementById('profName').value = name;
+  } else {
+    guestBox.classList.remove('hidden');
+    pwBox.classList.add('hidden');
+    document.getElementById('guestProfEmail').value = email;
+    document.getElementById('guestProfName').value = name;
+  }
+  showSection('profile');
+}
+
+function getDbErrorMessage(err) {
+  const msg = String(err?.message || '');
+  const combined = `${msg} ${err?.details || ''}`.toLowerCase();
+  if (err?.code === '23505' || combined.includes('duplicate key')) {
+    if (combined.includes('enrollment_id')) return 'This Enrollment ID is already registered.';
+    if (combined.includes('phone')) return 'This phone number is already registered.';
+    if (combined.includes('email')) return 'This email is already registered.';
+    if (combined.includes('utr')) return 'This 12-digit UTR has already been submitted.';
+    if (combined.includes('team_name')) return 'That team name is already taken for this event.';
+    if (combined.includes('registrations_event_id_attendee_email_key')) return 'You are already registered for this event.';
+    return 'A duplicate record already exists.';
+  }
+  return msg || 'Database error';
+}
+
+async function handleSavePwProfile(e) {
+  e.preventDefault();
+  const btn = document.getElementById('savePwProfileBtn');
+  btn.disabled = true;
+  try {
+    const user = await getVerifiedAuthUser();
+    if (!user) { showSection('auth'); return; }
+    const { data, error } = await supabase
+      .from('attendees')
+      .insert({
+        email: user.email.toLowerCase().trim(),
+        enrollment_id: document.getElementById('profEnrollmentId').value.trim().toUpperCase(),
+        name: document.getElementById('profName').value.trim(),
+        department: document.getElementById('profDepartment').value,
+        year: document.getElementById('profYear').value,
+        phone: document.getElementById('profPhone').value.trim()
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    currentProfile = data;
+    showAlert('Profile saved! Welcome to FESTIVE IOI Events.', 'success');
+    await enterPortal();
+  } catch (err) {
+    showAlert(getDbErrorMessage(err), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleSaveGuestProfile(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveGuestProfileBtn');
+  btn.disabled = true;
+  try {
+    const user = await getVerifiedAuthUser();
+    if (!user) { showSection('auth'); return; }
+    const { data, error } = await supabase
+      .from('attendees')
+      .insert({
+        email: user.email.toLowerCase().trim(),
+        enrollment_id: '',
+        name: document.getElementById('guestProfName').value.trim(),
+        company: document.getElementById('guestProfCompany').value.trim() || 'External Guest',
+        phone: document.getElementById('guestProfPhone').value.trim()
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    currentProfile = data;
+    showAlert('Profile saved! Welcome to FESTIVE IOI Events.', 'success');
+    await enterPortal();
+  } catch (err) {
+    showAlert(getDbErrorMessage(err), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function enterPortal() {
+  const pill = document.getElementById('profileSummaryPill');
+  if (pill && currentProfile) {
+    pill.textContent = `${currentProfile.enrollment_id} • ${currentProfile.user_type === 'pw_member' ? 'PW Member' : 'Guest'}`;
+  }
+  showSection('portal');
+  await Promise.all([loadClubs(), loadEventsAndCounts(), loadMyRegistrations()]);
+  setupLiveSubscriptions();
+}
+
+async function loadClubs() {
+  const { data } = await supabase.from('clubs').select('*').order('id');
+  allClubs = data || [];
+  renderClubPills();
+}
+
+function renderClubPills() {
+  const container = document.getElementById('clubFilterPills');
+  if (!container) return;
+  const pills = [{ id: 'ALL', name: 'All Clubs' }, ...allClubs];
+  container.innerHTML = pills.map(c => {
+    const active = String(selectedClubId) === String(c.id);
+    return `<button type="button" data-club-id="${escapeHtml(c.id)}" class="club-pill px-2.5 py-1 rounded-full text-[11px] font-medium transition border ${
+      active
+        ? 'bg-indigo-600 text-white border-indigo-500'
+        : 'bg-zinc-900/50 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+    }">${escapeHtml(c.name)}</button>`;
+  }).join('');
+
+  container.querySelectorAll('.club-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedClubId = btn.dataset.clubId;
+      renderClubPills();
+      renderEventsGrid();
+    });
+  });
+}
+
+async function loadEventsAndCounts() {
+  const [{ data: evData }, { data: cntData }] = await Promise.all([
+    supabase.from('events').select('*, clubs(id, name, slug)').eq('status', 'published').order('start_time', { ascending: true }),
+    supabase.rpc('get_event_registration_counts')
+  ]);
+  allEvents = evData || [];
+  eventRegCounts = {};
+  (cntData || []).forEach(r => { eventRegCounts[r.event_id] = Number(r.registered_count || 0); });
+  renderEventsGrid();
+}
+
+async function loadMyRegistrations() {
+  if (!currentProfile) return;
+  const { data } = await supabase
+    .from('registrations')
+    .select('*, events(*, clubs(name)), teams(id, team_name, join_code), attendance(*)')
+    .eq('attendee_email', currentProfile.email)
+    .order('registered_at', { ascending: false });
+
+  myRegistrations = data || [];
+  if (myPassesBadge) {
+    if (myRegistrations.length > 0) {
+      myPassesBadge.textContent = myRegistrations.length;
+      myPassesBadge.classList.remove('hidden');
+    } else {
+      myPassesBadge.classList.add('hidden');
+    }
+  }
+  renderEventsGrid();
+  renderMyPassesGrid();
+}
+
+function getUserFeeForEvent(ev) {
+  if (!currentProfile) return 0;
+  return currentProfile.user_type === 'pw_member' ? Number(ev.pw_fee || 0) : Number(ev.guest_fee || 0);
+}
+
+function renderEventsGrid() {
+  const grid = document.getElementById('eventsGrid');
+  if (!grid) return;
+
+  const q = (document.getElementById('eventSearchInput')?.value || '').toLowerCase().trim();
+  const fmtFilter = document.getElementById('eventTypeFilter')?.value || 'ALL';
+
+  const filtered = allEvents.filter(ev => {
+    const matchClub = selectedClubId === 'ALL' || String(ev.club_id) === String(selectedClubId);
+    const matchFmt = fmtFilter === 'ALL'
+      || (fmtFilter === 'solo' && (ev.participation_type === 'solo' || ev.participation_type === 'both'))
+      || (fmtFilter === 'team' && (ev.participation_type === 'team' || ev.participation_type === 'both'));
+    const matchQ = !q
+      || ev.title.toLowerCase().includes(q)
+      || (ev.venue && ev.venue.toLowerCase().includes(q))
+      || (ev.clubs?.name && ev.clubs.name.toLowerCase().includes(q));
+    return matchClub && matchFmt && matchQ;
+  });
+
+  if (filtered.length === 0) {
+    grid.innerHTML = `
+      <div class="col-span-full solid-card rounded-xl p-10 text-center text-zinc-500 text-xs">
+        No upcoming events match your filter right now. Check back soon!
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(ev => {
+    const existingReg = myRegistrations.find(r => r.event_id === ev.id);
+    const fee = getUserFeeForEvent(ev);
+    const regCount = eventRegCounts[ev.id] || 0;
+    const spotsLeft = ev.max_capacity ? Math.max(0, ev.max_capacity - regCount) : null;
+    const isFull = spotsLeft !== null && spotsLeft <= 0;
+    const isEligible = currentProfile?.user_type === 'pw_member' ? ev.allow_pw_members : ev.allow_guests;
+
+    const dateStr = new Date(ev.start_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const fmtLabel = ev.participation_type === 'team'
+      ? `Team (${ev.min_team_size}-${ev.max_team_size})`
+      : (ev.participation_type === 'both' ? `Solo / Team (${ev.min_team_size}-${ev.max_team_size})` : 'Solo');
+
+    let actionBtn = '';
+    if (existingReg) {
+      actionBtn = `<button type="button" onclick="openTicketModal('${escapeHtml(existingReg.id)}')" class="w-full py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition">View My Pass</button>`;
+    } else if (!ev.registration_open) {
+      actionBtn = `<button type="button" disabled class="w-full py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-500 cursor-not-allowed">Registrations Paused</button>`;
+    } else if (!isEligible) {
+      actionBtn = `<button type="button" disabled class="w-full py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-500 cursor-not-allowed">Not Eligible for Category</button>`;
+    } else if (isFull) {
+      actionBtn = `<button type="button" disabled class="w-full py-2 rounded-lg text-xs font-medium bg-rose-950/50 text-rose-400 cursor-not-allowed">Sold Out</button>`;
+    } else {
+      actionBtn = `<button type="button" onclick="openEventModal('${escapeHtml(ev.id)}')" class="btn-primary w-full py-2 rounded-lg text-xs font-semibold transition">Register Now</button>`;
+    }
+
+    return `
+      <div class="solid-card rounded-xl p-4 flex flex-col justify-between space-y-3.5 border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/40 transition">
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">${escapeHtml(ev.clubs?.name || 'Club Event')}</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono ${fee > 0 ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'}">${fee > 0 ? '₹' + escapeHtml(fee) : 'FREE'}</span>
+          </div>
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">${escapeHtml(ev.title)}</h3>
+          <p class="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2">${escapeHtml(ev.description || 'Official campus event.')}</p>
+        </div>
+
+        <div class="space-y-2.5 pt-2 border-t border-zinc-200 dark:border-zinc-800/80">
+          <div class="grid grid-cols-2 gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <div class="flex items-center space-x-1"><i class="ph ph-calendar text-xs"></i><span>${escapeHtml(dateStr)}</span></div>
+            <div class="flex items-center space-x-1"><i class="ph ph-map-pin text-xs"></i><span class="truncate">${escapeHtml(ev.venue || 'Campus')}</span></div>
+            <div class="flex items-center space-x-1"><i class="ph ph-users text-xs"></i><span>${escapeHtml(fmtLabel)}</span></div>
+            <div class="flex items-center space-x-1"><i class="ph ph-ticket text-xs"></i><span>${spotsLeft !== null ? `${spotsLeft} spots left` : `${regCount} registered`}</span></div>
+          </div>
+          ${actionBtn}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openEventModal(eventId) {
+  const ev = allEvents.find(e => e.id === eventId);
+  if (!ev) return;
+  activeModalEvent = ev;
+  lookedUpTeam = null;
+
+  document.getElementById('modalClubBadge').textContent = ev.clubs?.name || 'Club';
+  document.getElementById('modalEventTitle').textContent = ev.title;
+  const dateStr = new Date(ev.start_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  document.getElementById('modalEventMeta').textContent = `${dateStr} • ${ev.venue || 'Campus'}`;
+  document.getElementById('modalEventDesc').textContent = ev.description || '';
+
+  document.getElementById('newTeamName').value = '';
+  document.getElementById('joinTeamCode').value = '';
+  document.getElementById('foundTeamPreview').classList.add('hidden');
+  document.getElementById('modalUtrInput').value = '';
+
+  const teamSection = document.getElementById('teamModeSection');
+  if (ev.participation_type === 'solo') {
+    teamSection.classList.add('hidden');
+    setParticipationMode('solo');
+  } else {
+    teamSection.classList.remove('hidden');
+    document.getElementById('teamSizeHint').textContent = `Team size: ${ev.min_team_size} to ${ev.max_team_size} members. You'll get a Join Code to share with teammates.`;
+    const soloBtn = document.querySelector('#teamModeButtons [data-mode="solo"]');
+    if (soloBtn) soloBtn.classList.toggle('hidden', ev.participation_type === 'team');
+    setParticipationMode(ev.participation_type === 'team' ? 'create_team' : 'solo');
+  }
+
+  const fee = getUserFeeForEvent(ev);
+  const payBox = document.getElementById('modalPaymentBox');
+  if (fee > 0) {
+    payBox.classList.remove('hidden');
+    const upi = ev.upi_id || APP_CONFIG.upiId || 'payalyadav210106@okaxis';
+    document.getElementById('modalFeeAmount').textContent = `₹${fee}`;
+    document.getElementById('modalUpiId').textContent = upi;
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upi)}&pn=${encodeURIComponent(ev.title)}&am=${fee}&cu=INR`;
+    document.getElementById('modalUpiLink').href = upiUri;
+    const qrBox = document.getElementById('modalUpiQr');
+    qrBox.innerHTML = '';
+    new QRCode(qrBox, { text: upiUri, width: 96, height: 96, colorDark: '#1e1b4b', colorLight: '#ffffff' });
+  } else {
+    payBox.classList.add('hidden');
+  }
+
+  document.getElementById('eventRegModal').classList.remove('hidden');
+}
+window.openEventModal = openEventModal;
+
+function setParticipationMode(mode) {
+  activeParticipationMode = mode;
+  document.querySelectorAll('#teamModeButtons .mode-btn').forEach(btn => {
+    const active = btn.dataset.mode === mode;
+    btn.className = `mode-btn py-1.5 rounded-md text-xs font-medium transition ${
+      active ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
+    }`;
+  });
+  document.getElementById('createTeamBox').classList.toggle('hidden', mode !== 'create_team');
+  document.getElementById('joinTeamBox').classList.toggle('hidden', mode !== 'join_team');
+}
+
+async function lookupTeamByCode() {
+  if (!activeModalEvent) return;
+  const code = document.getElementById('joinTeamCode').value.trim().toUpperCase();
+  const preview = document.getElementById('foundTeamPreview');
+  if (!code) return;
+
+  const { data: team } = await supabase
+    .from('teams')
+    .select('*')
+    .eq('event_id', activeModalEvent.id)
+    .eq('join_code', code)
+    .maybeSingle();
+
+  if (!team) {
+    lookedUpTeam = null;
+    preview.className = 'text-[11px] text-rose-400 bg-rose-950/40 border border-rose-900/50 rounded p-2';
+    preview.textContent = `No team found with code "${code}" for this event.`;
+    preview.classList.remove('hidden');
+    return;
+  }
+
+  lookedUpTeam = team;
+  preview.className = 'text-[11px] text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 rounded p-2';
+  preview.textContent = `Found Team: "${team.team_name}" (${team.join_code})`;
+  preview.classList.remove('hidden');
+}
+
+async function confirmEventRegistration() {
+  if (!activeModalEvent || !currentProfile) return;
+  const btn = document.getElementById('confirmEventRegBtn');
+  btn.disabled = true;
+
+  try {
+    const fee = getUserFeeForEvent(activeModalEvent);
+    let utr = null;
+    if (fee > 0) {
+      utr = document.getElementById('modalUtrInput').value.trim();
+      if (!/^\d{12}$/.test(utr)) {
+        showAlert('Please enter a valid 12-digit numeric UPI UTR.', 'error');
+        btn.disabled = false;
+        return;
+      }
+    }
+
+    let teamId = null;
+    if (activeParticipationMode === 'create_team') {
+      const teamName = document.getElementById('newTeamName').value.trim();
+      if (!teamName) {
+        showAlert('Please enter a Team Name.', 'error');
+        btn.disabled = false;
+        return;
+      }
+      const { data: newTeam, error: teamErr } = await supabase
+        .from('teams')
+        .insert({
+          event_id: activeModalEvent.id,
+          team_name: teamName,
+          join_code: '',
+          leader_email: currentProfile.email
+        })
+        .select()
+        .single();
+      if (teamErr) throw teamErr;
+      teamId = newTeam.id;
+    } else if (activeParticipationMode === 'join_team') {
+      if (!lookedUpTeam) await lookupTeamByCode();
+      if (!lookedUpTeam) {
+        showAlert('Enter a valid Team Join Code and click Find first.', 'error');
+        btn.disabled = false;
+        return;
+      }
+      teamId = lookedUpTeam.id;
+    }
+
+    const { data: reg, error: regErr } = await supabase
+      .from('registrations')
+      .insert({
+        event_id: activeModalEvent.id,
+        team_id: teamId,
+        attendee_email: currentProfile.email,
+        ticket_token: '',
+        utr_number: utr
+      })
+      .select()
+      .single();
+
+    if (regErr) throw regErr;
+
+    document.getElementById('eventRegModal').classList.add('hidden');
+    if (window.confetti && reg.payment_status === 'approved') {
+      confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
+    }
+    await Promise.all([loadEventsAndCounts(), loadMyRegistrations()]);
+    switchPortalTab('tickets');
+    showAlert(
+      reg.payment_status === 'pending_verification'
+        ? 'Registration submitted! Pass will activate once payment is verified.'
+        : 'Registered successfully! Your QR pass is ready.',
+      'success'
+    );
+  } catch (err) {
+    showAlert(getDbErrorMessage(err), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderMyPassesGrid() {
+  const grid = document.getElementById('myPassesGrid');
+  if (!grid) return;
+  if (myRegistrations.length === 0) {
+    grid.innerHTML = `
+      <div class="col-span-full solid-card rounded-xl p-10 text-center text-zinc-500 text-xs">
+        You haven't registered for any events yet. Browse the Discover Events tab!
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = myRegistrations.map(reg => {
+    const ev = reg.events || {};
+    const isCheckedIn = Array.isArray(reg.attendance) ? reg.attendance.length > 0 : !!reg.attendance;
+    const isPendingPay = reg.payment_status === 'pending_verification';
+    const isRejected = reg.payment_status === 'rejected';
+    const dateStr = ev.start_time ? new Date(ev.start_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+    let badge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">Valid Pass</span>';
+    if (isCheckedIn) badge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/50">Checked In</span>';
+    else if (isPendingPay) badge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/50">Payment Pending</span>';
+    else if (isRejected) badge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/50">Payment Rejected</span>';
+
+    return `
+      <div class="solid-card rounded-xl p-4 space-y-3 border border-zinc-200 dark:border-zinc-800">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">${escapeHtml(ev.clubs?.name || 'Club')}</span>
+            <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mt-0.5">${escapeHtml(ev.title || 'Event')}</h3>
+            <p class="text-[11px] text-zinc-500 mt-0.5">${escapeHtml(dateStr)} &bull; ${escapeHtml(ev.venue || 'Campus')}</p>
+          </div>
+          ${badge}
+        </div>
+
+        ${reg.teams ? `
+          <div class="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 flex items-center justify-between text-[11px]">
+            <span class="text-zinc-400">Team: <strong class="text-zinc-200">${escapeHtml(reg.teams.team_name)}</strong></span>
+            <span class="font-mono text-indigo-400 select-all">Code: ${escapeHtml(reg.teams.join_code)}</span>
+          </div>
+        ` : ''}
+
+        <div class="flex items-center justify-between pt-2 border-t border-zinc-200 dark:border-zinc-800">
+          <span class="font-mono text-[11px] text-zinc-500">${escapeHtml(reg.ticket_token)}</span>
+          ${(!isPendingPay && !isRejected)
+            ? `<button type="button" onclick="openTicketModal('${escapeHtml(reg.id)}')" class="btn-primary px-3 py-1.5 rounded-lg text-xs font-semibold">Show QR Pass</button>`
+            : `<span class="text-[11px] text-zinc-500">UTR: ${escapeHtml(reg.utr_number || 'N/A')}</span>`
+          }
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openTicketModal(regId) {
+  const reg = myRegistrations.find(r => r.id === regId);
+  if (!reg) return;
+  const ev = reg.events || {};
+  const isCheckedIn = Array.isArray(reg.attendance) ? reg.attendance.length > 0 : !!reg.attendance;
+
+  document.getElementById('tktClubBadge').textContent = ev.clubs?.name || 'Club Event';
+  document.getElementById('tktEventTitle').textContent = ev.title || 'Event Pass';
+  const dateStr = ev.start_time ? new Date(ev.start_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  document.getElementById('tktEventMeta').textContent = `${dateStr} • ${ev.venue || 'Campus'}`;
+  document.getElementById('tktTokenDisplay').textContent = reg.ticket_token;
+  document.getElementById('tktHolderName').textContent = currentProfile?.name || '';
+  document.getElementById('tktHolderId').textContent = currentProfile?.enrollment_id || '';
+
+  const teamRow = document.getElementById('tktTeamRow');
+  if (reg.teams) {
+    teamRow.classList.remove('hidden');
+    document.getElementById('tktTeamInfo').textContent = `${reg.teams.team_name} (${reg.teams.join_code})`;
+  } else {
+    teamRow.classList.add('hidden');
+  }
+
+  const badge = document.getElementById('tktStatusBadge');
+  if (isCheckedIn) {
+    badge.className = 'mt-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
+    badge.textContent = 'Checked In';
+  } else {
+    badge.className = 'mt-2 px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 text-zinc-700 border border-zinc-200';
+    badge.textContent = 'Valid Entry Pass';
+  }
+
+  const qrBox = document.getElementById('tktQrContainer');
+  qrBox.innerHTML = '';
+  const payload = JSON.stringify({
+    ticket_token: reg.ticket_token,
+    registration_id: reg.id,
+    event_id: reg.event_id
+  });
+  new QRCode(qrBox, { text: payload, width: 200, height: 200, colorDark: '#1e1b4b', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });
+  document.getElementById('ticketModal').classList.remove('hidden');
+}
+window.openTicketModal = openTicketModal;
+
+function setupLiveSubscriptions() {
+  if (!supabase || !currentProfile) return;
+  if (studentLiveChannel) {
+    supabase.removeChannel(studentLiveChannel);
+    studentLiveChannel = null;
+  }
+  studentLiveChannel = supabase
+    .channel(`attendee-${currentProfile.email}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations', filter: `attendee_email=eq.${currentProfile.email}` }, () => loadMyRegistrations())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance' }, () => loadMyRegistrations())
+    .subscribe();
+}
+
+async function handleSignOut() {
+  if (studentLiveChannel && supabase) {
+    supabase.removeChannel(studentLiveChannel);
+    studentLiveChannel = null;
+  }
+  if (supabase) await supabase.auth.signOut();
+  currentAuthUser = null;
+  currentProfile = null;
+  updateHeaderUser(null);
+  showSection('auth');
+}
+
 function setupEventListeners() {
   if (googleSignInBtn) {
     googleSignInBtn.href = getGoogleAuthUrl();
     googleSignInBtn.addEventListener('click', signInWithGoogle);
   }
-
-  // Registration Forms
-  const pwForm = document.getElementById('pwRegistrationForm');
-  if (pwForm) pwForm.addEventListener('submit', handlePwRegistration);
-
-  const guestForm = document.getElementById('guestRegistrationForm');
-  if (guestForm) guestForm.addEventListener('submit', handleGuestRegistration);
-
-  // Guest Company Select ("Others" toggle)
-  const compSelect = document.getElementById('guestCompanySelect');
-  const customCompDiv = document.getElementById('guestCustomCompanyDiv');
-  const customCompInput = document.getElementById('guestCustomCompany');
-  if (compSelect && customCompDiv) {
-    compSelect.addEventListener('change', () => {
-      if (compSelect.value === 'Others') {
-        customCompDiv.classList.remove('hidden');
-        if (customCompInput) customCompInput.required = true;
-      } else {
-        customCompDiv.classList.add('hidden');
-        if (customCompInput) {
-          customCompInput.required = false;
-          customCompInput.value = '';
-        }
-      }
-    });
-  }
-
-  // Copy UPI ID button
-  const copyBtn = document.getElementById('copyUpiBtn');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', async () => {
-      const upiId = APP_CONFIG.upiId || 'payalyadav210106@okaxis';
-      try {
-        await navigator.clipboard.writeText(upiId);
-        showAlert(`UPI ID '${upiId}' copied to clipboard!`, 'success');
-      } catch (e) {
-        prompt('Copy UPI ID:', upiId);
-      }
-    });
-  }
-
   if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
+  if (navDiscoverBtn) navDiscoverBtn.addEventListener('click', () => switchPortalTab('discover'));
+  if (navTicketsBtn) navTicketsBtn.addEventListener('click', () => switchPortalTab('tickets'));
 
-  const printBtn = document.getElementById('downloadTicketBtn');
-  if (printBtn) {
-    printBtn.addEventListener('click', () => {
-      window.print();
-    });
-  }
+  document.getElementById('pwProfileForm')?.addEventListener('submit', handleSavePwProfile);
+  document.getElementById('guestProfileForm')?.addEventListener('submit', handleSaveGuestProfile);
+  document.getElementById('eventSearchInput')?.addEventListener('input', renderEventsGrid);
+  document.getElementById('eventTypeFilter')?.addEventListener('change', renderEventsGrid);
 
-  // Refresh ticket / approval status button
-  const refreshBtns = [
-    document.getElementById('refreshTicketStatusBtn'),
-    document.getElementById('refreshPendingStatusBtn')
-  ];
-  refreshBtns.forEach(btn => {
-    if (btn) {
-      btn.addEventListener('click', async () => {
-        const authUser = await getVerifiedAuthUser();
-        if (authUser && authUser.email) {
-          const meta = authUser.user_metadata || {};
-          const displayName = meta.full_name || meta.name || 'Attendee';
-          await loadStudentProfile(authUser.email.toLowerCase().trim(), displayName);
-          showAlert('Pass & verification status updated.', 'info');
-        } else {
-          showSection('auth');
-          showAlert('Please sign in again to refresh your pass.', 'error');
-        }
-      });
-    }
+  document.getElementById('closeEventModalBtn')?.addEventListener('click', () => document.getElementById('eventRegModal').classList.add('hidden'));
+  document.getElementById('closeTicketModalBtn')?.addEventListener('click', () => document.getElementById('ticketModal').classList.add('hidden'));
+  document.getElementById('printTicketModalBtn')?.addEventListener('click', () => window.print());
+
+  document.querySelectorAll('#teamModeButtons .mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => setParticipationMode(btn.dataset.mode));
   });
+  document.getElementById('lookupTeamBtn')?.addEventListener('click', lookupTeamByCode);
+  document.getElementById('confirmEventRegBtn')?.addEventListener('click', confirmEventRegistration);
+}
+
+async function initApp() {
+  setupEventListeners();
+  await loadDepartments();
+  await initAuth();
+  initGoogleGis();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
 }

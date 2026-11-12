@@ -3,21 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Portal | FESTIVE IOI Ticket Scanner & Data Sheet</title>
-  <!-- Tailwind CSS -->
+  <title>Organizer Portal | FESTIVE IOI Events &amp; Gate Control</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      darkMode: 'class'
-    };
+    tailwind.config = { darkMode: 'class' };
   </script>
-  <!-- Immediate Theme Initializer (prevents FOUC) -->
   <script>
     (function() {
       try {
         var saved = localStorage.getItem('festive_theme');
-        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var theme = saved || (prefersDark ? 'dark' : 'dark');
+        var theme = saved || 'dark';
         if (theme === 'light') {
           document.documentElement.classList.add('light');
           document.documentElement.classList.remove('dark');
@@ -28,11 +23,9 @@
       } catch(e) {}
     })();
   </script>
-  <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
-  <!-- HTML5-QRCode Scanner Library -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <link rel="stylesheet" href="./css/styles.css?v=15">
+  <link rel="stylesheet" href="./css/styles.css?v=21">
 </head>
 <body class="flex flex-col min-h-screen">
 
@@ -45,26 +38,25 @@
         </div>
         <div>
           <div class="flex items-center space-x-2">
-            <h1 class="font-semibold text-sm text-zinc-900 dark:text-zinc-100 leading-tight">Admin Gate Control</h1>
-            <span class="text-[10px] font-mono text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 px-1.5 py-0.5 rounded">STAFF</span>
+            <h1 class="font-semibold text-sm text-zinc-900 dark:text-zinc-100 leading-tight">Organizer &amp; Gate Control</h1>
+            <span id="adminRoleBadge" class="text-[10px] font-mono text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 px-1.5 py-0.5 rounded">STAFF</span>
           </div>
-          <p class="text-[11px] text-zinc-500 dark:text-zinc-400">FESTIVE IOI 2026 Ticket Verification & Attendance</p>
+          <p class="text-[11px] text-zinc-500 dark:text-zinc-400">Club Events, Group Registrations &amp; QR Scanner</p>
         </div>
       </div>
 
       <div class="flex items-center space-x-2">
-        <!-- Theme Toggle Button -->
         <button type="button" class="themeToggleBtn flex items-center justify-center w-8 h-8 rounded-md theme-toggle-btn transition" title="Toggle theme" aria-label="Toggle theme">
           <i class="themeToggleIcon ph ph-sun text-sm"></i>
         </button>
 
         <a href="/" class="btn-secondary flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-md transition">
           <i class="ph ph-arrow-left text-xs"></i>
-          <span>Student Portal</span>
+          <span>Events Portal</span>
         </a>
 
         <div id="adminControls" class="hidden items-center space-x-2 pl-2 border-l border-zinc-200 dark:border-zinc-800">
-          <button id="adminLogoutBtn" title="Logout" class="flex items-center space-x-1 text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition">
+          <button id="adminLogoutBtn" title="Logout" class="flex items-center space-x-1 text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition">
             <i class="ph ph-sign-out"></i>
             <span>Exit</span>
           </button>
@@ -76,16 +68,15 @@
   <!-- Notification Banner -->
   <div id="adminAlert" class="hidden max-w-2xl mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all"></div>
 
-  <!-- Main Content -->
   <main class="flex-grow max-w-7xl w-full mx-auto p-4 flex flex-col justify-start">
 
-    <!-- ADMIN LOGIN MODAL / VIEW -->
+    <!-- ADMIN LOGIN VIEW -->
     <div id="adminLoginSection" class="w-full max-w-sm mx-auto my-auto solid-card rounded-xl p-6 sm:p-7 text-center">
       <div class="w-10 h-10 mx-auto mb-3.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-center text-zinc-700 dark:text-zinc-300 text-lg">
         <i class="ph-bold ph-shield-check"></i>
       </div>
-      <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Gate Staff Login</h2>
-      <p class="text-zinc-500 dark:text-zinc-400 text-xs mb-5">Sign in with an authorized organizer Google account to access ticket scanner &amp; live datasheet.</p>
+      <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Organizer &amp; Club President Login</h2>
+      <p class="text-zinc-500 dark:text-zinc-400 text-xs mb-5">Sign in with your authorized Google account to create club events, verify payments, and scan gate passes.</p>
 
       <div class="space-y-3">
         <button type="button" id="adminGoogleSignInBtn"
@@ -108,506 +99,303 @@
       </div>
     </div>
 
-    <!-- ADMIN DASHBOARD (SCANNER + DATASHEET) -->
+    <!-- ADMIN DASHBOARD -->
     <div id="adminDashboardSection" class="hidden space-y-5">
 
-      <!-- STATS OVERVIEW CARDS -->
+      <!-- ACTIVE EVENT SELECTOR BAR -->
+      <div class="solid-card rounded-xl p-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-zinc-200 dark:border-zinc-800">
+        <div class="flex items-center gap-2.5 flex-grow">
+          <span class="text-xs font-medium text-zinc-500 whitespace-nowrap">Active Event:</span>
+          <select id="activeEventSelect" class="clean-input flex-grow max-w-md px-3 py-1.5 rounded-lg text-xs font-medium"></select>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="openCreateEventModalBtn" class="btn-primary px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5">
+            <i class="ph-bold ph-plus text-xs"></i>
+            <span>Create Event</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- STATS CARDS (For Active Event) -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Total Registered</p>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Event Registrations</p>
             <h3 id="statTotal" class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mt-1">0</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-base">
-            <i class="ph ph-users"></i>
-          </div>
+          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500"><i class="ph ph-users"></i></div>
         </div>
-
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Present (Scanned)</p>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Checked In</p>
             <h3 id="statPresent" class="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 mt-1">0</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 text-base">
-            <i class="ph ph-check-circle"></i>
-          </div>
+          <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-500"><i class="ph ph-check-circle"></i></div>
         </div>
-
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Pending Check-in</p>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Pending Scan</p>
             <h3 id="statPending" class="text-2xl font-semibold text-zinc-700 dark:text-zinc-300 mt-1">0</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-base">
-            <i class="ph ph-clock"></i>
-          </div>
+          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500"><i class="ph ph-clock"></i></div>
         </div>
-
         <div class="solid-card rounded-xl p-4 flex items-center justify-between">
           <div>
             <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Check-in Rate</p>
             <h3 id="statRate" class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mt-1">0%</h3>
           </div>
-          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500 dark:text-zinc-400 text-base">
-            <i class="ph ph-chart-pie-slice"></i>
-          </div>
+          <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-500"><i class="ph ph-chart-pie-slice"></i></div>
         </div>
       </div>
 
-      <!-- REGISTRATION RESPONSE CONTROLS (STOP / RESUME BUTTONS) -->
-      <div class="solid-card rounded-xl p-3.5 flex flex-col md:flex-row items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-800">
-        <div class="flex items-center space-x-2.5">
-          <div class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-500 flex items-center justify-center text-base">
-            <i class="ph-bold ph-sliders"></i>
-          </div>
-          <div>
-            <h4 class="text-xs font-semibold text-zinc-900 dark:text-zinc-100">Live Registration Controls</h4>
-            <p class="text-[11px] text-zinc-500">Stop or resume accepting new responses for specific attendee categories</p>
-          </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-          <!-- PW Community Responses Toggle Button -->
-          <div class="flex items-center space-x-2 bg-zinc-100 dark:bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">PW Community:</span>
-            <span id="pwStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">ACTIVE</span>
-            <button type="button" id="togglePwRegBtn" class="px-2.5 py-1 rounded text-xs font-semibold transition bg-rose-600 hover:bg-rose-500 text-white shadow-sm">
-              Stop Responses
-            </button>
-          </div>
-
-          <!-- External Users Responses Toggle Button -->
-          <div class="flex items-center space-x-2 bg-zinc-100 dark:bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">External Users:</span>
-            <span id="guestStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">ACTIVE</span>
-            <button type="button" id="toggleGuestRegBtn" class="px-2.5 py-1 rounded text-xs font-semibold transition bg-rose-600 hover:bg-rose-500 text-white shadow-sm">
-              Stop Responses
-            </button>
-          </div>
-        </div>
+      <!-- NAVIGATION TABS -->
+      <div class="flex flex-wrap gap-1 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 w-fit">
+        <button id="tabScannerBtn" class="admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm">
+          <i class="ph ph-qr-code text-xs"></i><span>Gate Scanner</span>
+        </button>
+        <button id="tabEventsBtn" class="admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-200">
+          <i class="ph ph-calendar-blank text-xs"></i><span>Events</span>
+        </button>
+        <button id="tabPaymentsBtn" class="admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-200">
+          <i class="ph ph-currency-inr text-xs"></i><span>Payments</span>
+          <span id="pendingPaymentsCountBadge" class="hidden px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-black">0</span>
+        </button>
+        <button id="tabDataSheetBtn" class="admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-200">
+          <i class="ph ph-table text-xs"></i><span>DataSheet</span>
+        </button>
+        <button id="tabPresidentsBtn" class="hidden admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-200">
+          <i class="ph ph-crown text-xs"></i><span>Club Presidents</span>
+        </button>
       </div>
 
-      <!-- TABS NAVIGATION -->
-      <div class="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800/80 pb-2">
-        <div class="flex space-x-1 p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-          <button id="tabScannerBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm">
-            <i class="ph ph-camera text-sm"></i>
-            <span>Ticket Scanner</span>
-          </button>
-          <button id="tabPaymentsBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200">
-            <i class="ph ph-currency-inr text-sm"></i>
-            <span>Payment Approvals</span>
-            <span id="pendingPaymentsCountBadge" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-bold hidden">0</span>
-          </button>
-          <button id="tabDataSheetBtn" class="px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200">
-            <i class="ph ph-table text-sm"></i>
-            <span>Data Sheet</span>
-          </button>
-        </div>
-
-        <div class="flex items-center space-x-2">
-          <!-- MANUAL ENTRY BUTTON -->
-          <button type="button" id="openManualEntryModalBtn" class="btn-primary px-3 py-1.5 rounded-md text-xs font-medium flex items-center space-x-1.5 transition shadow-sm">
-            <i class="ph-bold ph-plus-circle text-xs"></i>
-            <span>+ Manual Entry</span>
-          </button>
-          <button id="refreshDataBtn" title="Refresh Data" class="btn-secondary px-3 py-1.5 rounded-md text-xs flex items-center space-x-1.5 transition">
-            <i class="ph ph-arrows-clockwise text-xs"></i>
-            <span>Refresh</span>
-          </button>
-          <a href="/api/admin/export-csv" id="exportCsvBtn" download="attendance_datasheet.csv" class="btn-secondary px-3 py-1.5 rounded-md text-xs font-medium flex items-center space-x-1.5 transition">
-            <i class="ph ph-download-simple text-xs"></i>
-            <span>Export CSV</span>
-          </a>
-        </div>
-      </div>
-
-      <!-- VIEW 1: TICKET SCANNER VIEW -->
+      <!-- TAB 1: SCANNER VIEW -->
       <div id="scannerView" class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-
-        <!-- Left Column: Camera Scanner & Manual Input -->
-        <div class="lg:col-span-6 space-y-4">
-          <div class="solid-card rounded-xl p-5">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center space-x-2">
-                <i class="ph ph-scan text-sm text-zinc-500 dark:text-zinc-400"></i>
-                <span>QR Camera Scanner</span>
-              </h3>
-              <button id="toggleCameraBtn" class="btn-primary px-2.5 py-1 rounded-md text-xs font-medium transition">
-                Start Camera
-              </button>
+        <div class="lg:col-span-7 solid-card rounded-xl p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Live QR Gate Scanner</h3>
+              <p class="text-[11px] text-zinc-500">Verifies tickets strictly for the selected Active Event.</p>
             </div>
+            <button type="button" id="toggleCameraBtn" class="px-3 py-1.5 rounded-md text-xs font-medium bg-white hover:bg-zinc-200 text-zinc-950 transition">Start Camera</button>
+          </div>
+          <div id="reader" class="w-full rounded-xl overflow-hidden bg-black/40 border border-zinc-800 min-h-[240px]"></div>
+          <form id="manualScanForm" class="flex gap-2">
+            <input type="text" id="manualInput" placeholder="Scan or enter Ticket Token (TKT-...) or Roll No..." class="clean-input flex-grow px-3 py-2 rounded-lg text-xs font-mono">
+            <button type="submit" class="btn-primary px-4 py-2 rounded-lg text-xs font-semibold">Verify</button>
+          </form>
+        </div>
 
-            <!-- HTML5 QR Camera container -->
-            <div id="reader" class="bg-black min-h-[260px] flex items-center justify-center text-zinc-500 text-xs">
-              <span class="p-4 text-center">Click "Start Camera" above to activate camera scanner</span>
+        <div class="lg:col-span-5 space-y-4">
+          <div id="scanResultBox" class="solid-card rounded-xl p-6 text-center text-xs text-zinc-500">
+            Ready to scan tickets for the selected event.
+          </div>
+          <div class="solid-card rounded-xl p-4 space-y-2.5">
+            <h4 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Recent Gate Scans</h4>
+            <div id="recentScansList" class="space-y-2 text-xs text-zinc-500">No scans yet in this session.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: EVENTS MANAGER VIEW -->
+      <div id="eventsView" class="hidden space-y-4">
+        <div id="adminEventsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </div>
+
+      <!-- TAB 3: PAYMENTS VIEW -->
+      <div id="paymentsView" class="hidden solid-card rounded-xl p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <input type="text" id="paymentSearch" placeholder="Search name, UTR, email..." class="clean-input px-3 py-1.5 rounded-lg text-xs w-64">
+          <select id="filterPaymentStatus" class="clean-input px-3 py-1.5 rounded-lg text-xs">
+            <option value="ALL">All Payments</option>
+            <option value="pending_verification">Pending Verification</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="text-zinc-500 border-b border-zinc-800">
+              <tr>
+                <th class="py-2.5 px-3">Attendee</th>
+                <th class="py-2.5 px-3">ID / Type</th>
+                <th class="py-2.5 px-3">Team</th>
+                <th class="py-2.5 px-3">UTR</th>
+                <th class="py-2.5 px-3">Fee</th>
+                <th class="py-2.5 px-3">Status</th>
+                <th class="py-2.5 px-3 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="paymentsBody" class="divide-y divide-zinc-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 4: DATASHEET VIEW -->
+      <div id="datasheetView" class="hidden solid-card rounded-xl p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="tableSearch" placeholder="Search name, ID, team, email..." class="clean-input px-3 py-1.5 rounded-lg text-xs w-60">
+            <select id="filterStatus" class="clean-input px-3 py-1.5 rounded-lg text-xs">
+              <option value="ALL">All Statuses</option>
+              <option value="Present">Present</option>
+              <option value="Not Scanned">Not Scanned</option>
+            </select>
+            <span class="text-xs text-zinc-500">Showing <strong id="recordCount" class="text-zinc-200">0</strong></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="refreshDataBtn" class="btn-secondary px-3 py-1.5 rounded-lg text-xs">Refresh</button>
+            <button type="button" id="exportCsvBtn" class="btn-primary px-3 py-1.5 rounded-lg text-xs font-semibold">Export CSV</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="text-zinc-500 border-b border-zinc-800">
+              <tr>
+                <th class="py-2.5 px-3">ID</th>
+                <th class="py-2.5 px-3">Name</th>
+                <th class="py-2.5 px-3">Team</th>
+                <th class="py-2.5 px-3">Phone</th>
+                <th class="py-2.5 px-3">Email</th>
+                <th class="py-2.5 px-3">Payment</th>
+                <th class="py-2.5 px-3">Attendance</th>
+                <th class="py-2.5 px-3 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="datasheetBody" class="divide-y divide-zinc-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB 5: CLUB PRESIDENTS (SUPER ADMIN ONLY) -->
+      <div id="presidentsView" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div class="lg:col-span-5 solid-card rounded-xl p-5 space-y-3.5 h-fit">
+          <h3 class="text-sm font-semibold text-zinc-100">Assign Club President / Staff</h3>
+          <form id="addPresidentForm" class="space-y-3">
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Google Email <span class="text-rose-500">*</span></label>
+              <input type="email" id="presEmail" required placeholder="president@pwioi.com" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
             </div>
-
-            <!-- MANUAL ENTRY WITH TICKET ID OR ROLL/GUEST ID -->
-            <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800/80">
-              <div class="flex items-center justify-between mb-1.5">
-                <label class="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center space-x-1.5">
-                  <i class="ph-bold ph-keyboard text-xs text-indigo-500"></i>
-                  <span>Manual Entry with Ticket ID / Roll No</span>
-                </label>
-                <span class="text-[10px] text-zinc-400">Ticket Token or Roll/Guest ID</span>
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Full Name</label>
+              <input type="text" id="presName" placeholder="President Name" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Club <span class="text-rose-500">*</span></label>
+                <select id="presClubId" required class="clean-input w-full px-2.5 py-2 rounded-lg text-xs"></select>
               </div>
-              <form id="manualScanForm" class="flex space-x-2">
-                <input type="text" id="manualInput" placeholder="Roll No (e.g. 2501030001), TKT-..., GST-..., Email, or Phone" required
-                       class="clean-input flex-1 px-3 py-2.5 rounded-lg text-xs font-mono tracking-wider">
-                <button type="submit" id="manualScanBtn" class="btn-primary px-4 py-2 rounded-lg text-xs font-medium transition flex items-center space-x-1.5">
-                  <i class="ph-bold ph-check"></i>
-                  <span>Check In</span>
-                </button>
-              </form>
+              <div>
+                <label class="block text-xs text-zinc-400 mb-1">Role</label>
+                <select id="presRole" class="clean-input w-full px-2.5 py-2 rounded-lg text-xs">
+                  <option value="club_president">Club President</option>
+                  <option value="gate_staff">Gate Staff</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </div>
             </div>
-          </div>
+            <button type="submit" class="btn-primary w-full py-2 rounded-lg text-xs font-semibold">Save Organizer Access</button>
+          </form>
         </div>
 
-        <!-- Right Column: Live Scan Status & Feedback -->
-        <div class="lg:col-span-6 space-y-4">
-          
-          <!-- SCAN RESULT NOTICE BOX (SUCCESS / DUPLICATE / ERROR) -->
-          <div id="scanResultBox" class="solid-card rounded-xl p-6 min-h-[260px] flex flex-col items-center justify-center text-center transition-all">
-            <div class="w-12 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-zinc-400 text-2xl mb-3">
-              <i class="ph ph-qr-code"></i>
-            </div>
-            <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Awaiting Ticket Scan...</h4>
-            <p class="text-xs text-zinc-500 max-w-xs mt-1">Point the camera towards the student's ticket QR code to verify entry.</p>
-          </div>
-
-          <!-- MINI RECENT SCANS LOG -->
-          <div class="solid-card rounded-xl p-4">
-            <h4 class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
-              <span>Recent Gate Scans</span>
-              <span class="text-[10px] text-zinc-400 dark:text-zinc-500">Live</span>
-            </h4>
-            <div id="recentScansList" class="space-y-1.5 text-xs max-h-44 overflow-y-auto">
-              <p class="text-zinc-500 text-xs text-center py-4">No tickets scanned in this session yet.</p>
-            </div>
-          </div>
-
+        <div class="lg:col-span-7 solid-card rounded-xl p-5 space-y-3">
+          <h3 class="text-sm font-semibold text-zinc-100">Authorized Club Presidents &amp; Admins</h3>
+          <div id="presidentsList" class="space-y-2 text-xs"></div>
         </div>
-
-      </div>
-
-      <!-- VIEW 2: PAYMENT APPROVALS (UPI ₹500 VERIFICATION) -->
-      <div id="paymentsView" class="hidden space-y-3.5">
-        
-        <!-- Summary Cards for Payments -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div class="solid-card rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Total External Guests</p>
-              <h3 id="statGuestTotal" class="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mt-0.5">0</h3>
-            </div>
-            <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 text-sm">
-              <i class="ph ph-buildings"></i>
-            </div>
-          </div>
-
-          <div class="solid-card rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p class="text-xs font-medium text-amber-600 dark:text-amber-400">Pending UPI Verification</p>
-              <h3 id="statGuestPending" class="text-xl font-semibold text-amber-600 dark:text-amber-400 mt-0.5">0</h3>
-            </div>
-            <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-900/60 flex items-center justify-center text-amber-600 text-sm">
-              <i class="ph ph-hourglass-high"></i>
-            </div>
-          </div>
-
-          <div class="solid-card rounded-xl p-4 flex items-center justify-between">
-            <div>
-              <p class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Approved Payments</p>
-              <h3 id="statGuestApproved" class="text-xl font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">0</h3>
-            </div>
-            <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-600 text-sm">
-              <i class="ph ph-check-circle"></i>
-            </div>
-          </div>
-        </div>
-
-        <!-- Payments Filter Bar -->
-        <div class="solid-card rounded-xl p-3 flex flex-col md:flex-row gap-2.5 items-center justify-between">
-          <div class="relative w-full md:w-72">
-            <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-400 text-xs"></i>
-            <input type="text" id="paymentSearch" placeholder="Search by name, company, or UTR..."
-                   class="clean-input w-full pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-400">
-          </div>
-
-          <div class="flex items-center gap-2 w-full md:w-auto">
-            <select id="filterPaymentStatus" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
-              <option value="ALL">All Payments</option>
-              <option value="pending_verification" selected>Pending Verification Only</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Payments Table -->
-        <div class="solid-card rounded-xl overflow-hidden">
-          <div class="overflow-x-auto max-h-[600px]">
-            <table class="w-full text-left text-xs custom-table">
-              <thead>
-                <tr>
-                  <th class="py-2.5 px-3.5">Guest ID</th>
-                  <th class="py-2.5 px-3.5">Attendee</th>
-                  <th class="py-2.5 px-3.5">Company</th>
-                  <th class="py-2.5 px-3.5">Contact</th>
-                  <th class="py-2.5 px-3.5">Submitted 12-Digit UTR</th>
-                  <th class="py-2.5 px-3.5 text-center">Amount</th>
-                  <th class="py-2.5 px-3.5">Status</th>
-                  <th class="py-2.5 px-3.5 text-center">Verification Action</th>
-                </tr>
-              </thead>
-              <tbody id="paymentsBody" class="divide-y divide-zinc-200 dark:divide-zinc-800/60 text-zinc-700 dark:text-zinc-300">
-                <tr>
-                  <td colspan="8" class="text-center py-8 text-zinc-500">
-                    Loading guest payments...
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- VIEW 3: LIVE ATTENDANCE DATA SHEET -->
-      <div id="datasheetView" class="hidden space-y-3.5">
-        
-        <!-- Search and Filters Bar -->
-        <div class="solid-card rounded-xl p-3 flex flex-col md:flex-row gap-2.5 items-center justify-between">
-          <div class="relative w-full md:w-72">
-            <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-400 dark:text-zinc-500 text-xs"></i>
-            <input type="text" id="tableSearch" placeholder="Search attendee..."
-                   class="clean-input w-full pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-400 dark:placeholder-zinc-500">
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            <!-- Filter Status -->
-            <select id="filterStatus" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
-              <option value="ALL">All Status</option>
-              <option value="Present">Present (Scanned)</option>
-              <option value="Not Scanned">Not Scanned (Pending)</option>
-            </select>
-
-            <!-- Filter Department -->
-            <select id="filterDept" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
-              <option value="ALL">All Departments</option>
-            </select>
-
-            <!-- Filter Year -->
-            <select id="filterYear" class="clean-input px-2.5 py-1.5 rounded-lg text-xs">
-              <option value="ALL">All Years / Roles</option>
-              <option value="1">Year 1</option>
-              <option value="2">Year 2</option>
-              <option value="3">Year 3</option>
-              <option value="4">Year 4</option>
-              <option value="Faculty">Faculty</option>
-              <option value="Guest">Guest</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Data Table Container -->
-        <div class="solid-card rounded-xl overflow-hidden">
-          <div class="overflow-x-auto max-h-[600px]">
-            <table class="w-full text-left text-xs custom-table">
-              <thead>
-                <tr>
-                  <th class="py-2.5 px-3.5">Enrollment / Ref ID</th>
-                  <th class="py-2.5 px-3.5">Name</th>
-                  <th class="py-2.5 px-3.5">Dept / Company</th>
-                  <th class="py-2.5 px-3.5 text-center">Year / Role</th>
-                  <th class="py-2.5 px-3.5">Phone</th>
-                  <th class="py-2.5 px-3.5">Email</th>
-                  <th class="py-2.5 px-3.5">Payment</th>
-                  <th class="py-2.5 px-3.5">Attendance</th>
-                  <th class="py-2.5 px-3.5">Scanned Time</th>
-                  <th class="py-2.5 px-3.5 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody id="datasheetBody" class="divide-y divide-zinc-200 dark:divide-zinc-800/60 text-zinc-700 dark:text-zinc-300">
-                <tr>
-                  <td colspan="10" class="text-center py-8 text-zinc-500">
-                    Loading attendee data from Supabase...
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Table Footer -->
-          <div class="p-3 bg-zinc-50 dark:bg-zinc-950/80 border-t border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-            <span>Showing <span id="recordCount" class="font-medium text-zinc-800 dark:text-zinc-200">0</span> attendees</span>
-            <span class="text-[11px] text-zinc-400 dark:text-zinc-500">Updates instantly upon ticket scan</span>
-          </div>
-        </div>
-
       </div>
 
     </div>
 
-    <!-- MANUAL ATTENDEE ENTRY MODAL -->
-    <div id="manualEntryModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div class="solid-card rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800">
-        <div class="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
-          <div class="flex items-center space-x-2.5">
-            <div class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-500 flex items-center justify-center text-sm">
-              <i class="ph-bold ph-user-plus"></i>
-            </div>
-            <div>
-              <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Manual Attendee Entry</h3>
-              <p class="text-[11px] text-zinc-500">Add an offline attendee or custom ticket to cloud database</p>
-            </div>
-          </div>
-          <button type="button" id="closeManualEntryModalBtn" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1.5 rounded-md">
-            <i class="ph ph-x text-base"></i>
-          </button>
+    <!-- CREATE EVENT MODAL -->
+    <div id="createEventModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div class="solid-card w-full max-w-lg rounded-2xl p-5 sm:p-6 border border-zinc-800 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <h3 class="text-sm font-semibold text-zinc-100">Create New Club Event</h3>
+          <button type="button" id="closeCreateEventModalBtn" class="text-zinc-400 hover:text-white p-1"><i class="ph-bold ph-x text-sm"></i></button>
         </div>
 
-        <form id="manualEntryForm" class="space-y-3.5">
-          <!-- Category Selector -->
-          <div class="grid grid-cols-2 gap-2 p-1 bg-zinc-100 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <label class="flex items-center justify-center space-x-1.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition select-none bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm" id="typePwLabel">
-              <input type="radio" name="manualUserType" value="pw_member" checked class="hidden" id="manualTypePw">
-              <i class="ph-bold ph-graduation-cap"></i>
-              <span>PW Member (Free)</span>
-            </label>
-            <label class="flex items-center justify-center space-x-1.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition select-none text-zinc-500 hover:text-zinc-900 dark:hover:text-white" id="typeGuestLabel">
-              <input type="radio" name="manualUserType" value="guest" class="hidden" id="manualTypeGuest">
-              <i class="ph-bold ph-buildings"></i>
-              <span>External Guest (₹500)</span>
-            </label>
-          </div>
-
-          <!-- Ticket ID & Enrollment ID -->
+        <form id="createEventForm" class="space-y-3 text-xs">
           <div class="grid grid-cols-2 gap-2.5">
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Ticket ID / Token <span class="text-rose-500">*</span>
-              </label>
-              <input type="text" id="manualTicketToken" required placeholder="e.g. TKT-B1234567"
-                     class="clean-input w-full px-3 py-2 rounded-lg text-xs font-mono uppercase">
+              <label class="block text-zinc-400 mb-1">Hosting Club <span class="text-rose-500">*</span></label>
+              <select id="evClubId" required class="clean-input w-full px-2.5 py-2 rounded-lg text-xs"></select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1" id="manualEnrollmentLabel">
-                Roll / Ref ID <span class="text-rose-500">*</span>
-              </label>
-              <input type="text" id="manualEnrollmentId" required placeholder="e.g. 22400123 or GST-1001"
-                     class="clean-input w-full px-3 py-2 rounded-lg text-xs font-mono uppercase">
+              <label class="block text-zinc-400 mb-1">Venue <span class="text-rose-500">*</span></label>
+              <input type="text" id="evVenue" required placeholder="Auditorium / Turf" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
             </div>
           </div>
 
-          <!-- Full Name -->
           <div>
-            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Full Name <span class="text-rose-500">*</span>
-            </label>
-            <input type="text" id="manualName" required placeholder="Attendee Full Name"
-                   class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+            <label class="block text-zinc-400 mb-1">Event Title <span class="text-rose-500">*</span></label>
+            <input type="text" id="evTitle" required placeholder="e.g. IOI HackSprint 2026" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
           </div>
 
-          <!-- Email & Phone -->
+          <div>
+            <label class="block text-zinc-400 mb-1">Description</label>
+            <textarea id="evDesc" rows="2" placeholder="Event details, rules, prizes..." class="clean-input w-full px-3 py-2 rounded-lg text-xs"></textarea>
+          </div>
+
           <div class="grid grid-cols-2 gap-2.5">
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Email Address <span class="text-rose-500">*</span>
-              </label>
-              <input type="email" id="manualEmail" required placeholder="attendee@example.com"
-                     class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+              <label class="block text-zinc-400 mb-1">Start Date &amp; Time <span class="text-rose-500">*</span></label>
+              <input type="datetime-local" id="evStartTime" required class="clean-input w-full px-2.5 py-2 rounded-lg text-xs">
             </div>
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Phone Number <span class="text-rose-500">*</span>
-              </label>
-              <input type="tel" id="manualPhone" required placeholder="10-digit number"
-                     class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+              <label class="block text-zinc-400 mb-1">Max Capacity (optional)</label>
+              <input type="number" id="evMaxCapacity" min="1" placeholder="e.g. 200" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
             </div>
           </div>
 
-          <!-- PW Specific Fields -->
-          <div id="manualPwFieldsDiv" class="grid grid-cols-2 gap-2.5">
+          <div class="grid grid-cols-3 gap-2.5">
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Department <span class="text-rose-500">*</span>
-              </label>
-              <select id="manualDepartment" class="clean-input w-full px-2 py-2 rounded-lg text-xs">
-                <option value="School of Technology (SOT)">School of Technology (SOT)</option>
-                <option value="School of Management (SOM)">School of Management (SOM)</option>
-                <option value="School of Healthcare (SOH)">School of Healthcare (SOH)</option>
+              <label class="block text-zinc-400 mb-1">Format</label>
+              <select id="evPartType" class="clean-input w-full px-2 py-2 rounded-lg text-xs">
+                <option value="solo">Solo Only</option>
+                <option value="team">Group / Team Only</option>
+                <option value="both">Solo or Team</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Year / Role <span class="text-rose-500">*</span>
-              </label>
-              <select id="manualYear" class="clean-input w-full px-2 py-2 rounded-lg text-xs">
-                <option value="1">1st Year</option>
-                <option value="2">2nd Year</option>
-                <option value="3" selected>3rd Year</option>
-                <option value="4">4th Year</option>
-                <option value="Faculty">Faculty</option>
-              </select>
+              <label class="block text-zinc-400 mb-1">Min Team Size</label>
+              <input type="number" id="evMinTeam" value="1" min="1" class="clean-input w-full px-2.5 py-2 rounded-lg text-xs">
             </div>
-          </div>
-
-          <!-- Guest Specific Fields -->
-          <div id="manualGuestFieldsDiv" class="hidden space-y-2.5">
             <div>
-              <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Company / Organization <span class="text-rose-500">*</span>
-              </label>
-              <input type="text" id="manualCompany" placeholder="e.g. UpGrad, News nation, Silver Spring"
-                     class="clean-input w-full px-3 py-2 rounded-lg text-xs">
-            </div>
-            <div class="grid grid-cols-2 gap-2.5">
-              <div>
-                <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  12-Digit UTR (Optional)
-                </label>
-                <input type="text" id="manualUtr" placeholder="4289XXXXXXXX" maxlength="12"
-                       class="clean-input w-full px-3 py-2 rounded-lg text-xs font-mono">
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Payment Status
-                </label>
-                <select id="manualPaymentStatus" class="clean-input w-full px-2 py-2 rounded-lg text-xs">
-                  <option value="approved" selected>Approved (₹500 Paid)</option>
-                  <option value="pending_verification">Pending Verification</option>
-                </select>
-              </div>
+              <label class="block text-zinc-400 mb-1">Max Team Size</label>
+              <input type="number" id="evMaxTeam" value="1" min="1" class="clean-input w-full px-2.5 py-2 rounded-lg text-xs">
             </div>
           </div>
 
-          <div class="pt-2 flex items-center justify-end space-x-2">
-            <button type="button" id="cancelManualEntryBtn" class="btn-secondary px-3.5 py-2 rounded-lg text-xs">
-              Cancel
-            </button>
-            <button type="submit" id="saveManualEntryBtn" class="btn-primary px-4 py-2 rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md">
-              <i class="ph-bold ph-check"></i>
-              <span>Save & Register Attendee</span>
-            </button>
+          <div class="grid grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-zinc-400 mb-1">PW Member Fee (₹)</label>
+              <input type="number" id="evPwFee" value="0" min="0" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+            </div>
+            <div>
+              <label class="block text-zinc-400 mb-1">External Guest Fee (₹)</label>
+              <input type="number" id="evGuestFee" value="500" min="0" class="clean-input w-full px-3 py-2 rounded-lg text-xs">
+            </div>
           </div>
+
+          <div class="flex items-center space-x-4 pt-1">
+            <label class="inline-flex items-center space-x-1.5"><input type="checkbox" id="evAllowPw" checked><span>Allow PW Members</span></label>
+            <label class="inline-flex items-center space-x-1.5"><input type="checkbox" id="evAllowGuests" checked><span>Allow External Guests</span></label>
+          </div>
+
+          <button type="submit" id="submitCreateEventBtn" class="btn-primary w-full py-2.5 rounded-lg text-xs font-semibold">Publish Event</button>
         </form>
       </div>
     </div>
 
   </main>
 
-  <!-- Footer -->
   <footer class="py-5 text-center text-xs text-zinc-500 border-t border-zinc-200 dark:border-zinc-900 space-y-1">
-    <p>FESTIVE-IOI Admin Gate &copy; 2026. Secure QR Verification Protocol.</p>
+    <p>FESTIVE-IOI Organizer Gate &copy; 2026</p>
     <p class="text-[11px] text-zinc-600 dark:text-zinc-400">Made by <span class="font-medium text-zinc-800 dark:text-zinc-200">Mridul Sikarwar</span></p>
   </footer>
 
-  <!-- Theme & Supabase Scripts -->
-  <script src="./js/theme.js?v=19"></script>
+  <script src="./js/theme.js?v=21"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./js/supabaseClient.js?v=20"></script>
-  <script src="./js/admin.js?v=20"></script>
+  <script src="./js/supabaseClient.js?v=21"></script>
+  <script src="./js/admin.js?v=21"></script>
 </body>
 </html>

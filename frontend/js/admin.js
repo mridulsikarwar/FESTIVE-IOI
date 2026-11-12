@@ -1,11 +1,14 @@
-// Admin Portal Client Script (Direct Supabase Integration + Supabase Auth Admin Verification)
+// FESTIVE IOI - Multi-Club Organizer, Event Manager & Gate Scanner Portal
 
-let isAdminLoggedIn = false;
-let currentAdminEmail = null;
+let currentAdmin = null; // { email, name, role, club_id, clubs }
+let allClubs = [];
+let managedEvents = [];
+let activeEventId = null;
+let eventRegistrations = [];
 let adminRealtimeChannel = null;
 let html5QrScanner = null;
 let isScannerRunning = false;
-let datasheetData = [];
+let isProcessingScan = false;
 let audioCtx = null;
 let recentScans = [];
 
@@ -18,10 +21,12 @@ function escapeHtml(val) {
     .replace(/'/g, '&#39;');
 }
 
-function generateSecureHex(byteLen) {
-  const bytes = new Uint8Array(byteLen);
-  window.crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+function slugify(text) {
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') + '-' + Math.random().toString(36).substring(2, 6);
 }
 
 // DOM Elements
@@ -34,248 +39,64 @@ const adminSwitchAccountBtn = document.getElementById('adminSwitchAccountBtn');
 const adminAlert = document.getElementById('adminAlert');
 const adminControls = document.getElementById('adminControls');
 const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+const adminRoleBadge = document.getElementById('adminRoleBadge');
+const activeEventSelect = document.getElementById('activeEventSelect');
 
-const tabScannerBtn = document.getElementById('tabScannerBtn');
-const tabPaymentsBtn = document.getElementById('tabPaymentsBtn');
-const tabDataSheetBtn = document.getElementById('tabDataSheetBtn');
-const scannerView = document.getElementById('scannerView');
-const paymentsView = document.getElementById('paymentsView');
-const datasheetView = document.getElementById('datasheetView');
-
-const pendingPaymentsCountBadge = document.getElementById('pendingPaymentsCountBadge');
-const paymentsBody = document.getElementById('paymentsBody');
-const paymentSearch = document.getElementById('paymentSearch');
-const filterPaymentStatus = document.getElementById('filterPaymentStatus');
-const statGuestTotal = document.getElementById('statGuestTotal');
-const statGuestPending = document.getElementById('statGuestPending');
-const statGuestApproved = document.getElementById('statGuestApproved');
-
-const toggleCameraBtn = document.getElementById('toggleCameraBtn');
-const manualScanForm = document.getElementById('manualScanForm');
-const manualInput = document.getElementById('manualInput');
-const scanResultBox = document.getElementById('scanResultBox');
-const recentScansList = document.getElementById('recentScansList');
-
-const refreshDataBtn = document.getElementById('refreshDataBtn');
-const exportCsvBtn = document.getElementById('exportCsvBtn');
-const tableSearch = document.getElementById('tableSearch');
-const filterStatus = document.getElementById('filterStatus');
-const filterDept = document.getElementById('filterDept');
-const filterYear = document.getElementById('filterYear');
-const datasheetBody = document.getElementById('datasheetBody');
-const recordCount = document.getElementById('recordCount');
-
-let paymentsData = [];
-
-// System Config for Live Registration Gates
-let systemConfig = {
-  pw_registration_open: 'true',
-  guest_registration_open: 'true'
-};
-
-// Initialize
-function initAdmin() {
-  setupEventListeners();
-  checkAdminSession();
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initAdmin);
-} else {
-  initAdmin();
-}
-
-// Audio Feedback System using Web Audio API
-function initAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function showAdminAlert(message, type = 'info') {
+  adminAlert.className = 'max-w-2xl mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all';
+  let iconHtml = '<i class="ph ph-info text-sm mt-0.5 text-zinc-400"></i>';
+  if (type === 'error') {
+    adminAlert.classList.add('bg-rose-950/40', 'border-rose-900/60', 'text-rose-200');
+    iconHtml = '<i class="ph ph-warning-circle text-sm text-rose-400 mt-0.5"></i>';
+  } else if (type === 'success') {
+    adminAlert.classList.add('bg-emerald-950/40', 'border-emerald-900/60', 'text-emerald-200');
+    iconHtml = '<i class="ph ph-check-circle text-sm text-emerald-400 mt-0.5"></i>';
+  } else {
+    adminAlert.classList.add('bg-zinc-900', 'border-zinc-800', 'text-zinc-300');
   }
+  adminAlert.innerHTML = `${iconHtml}<span>${escapeHtml(message)}</span>`;
+  adminAlert.classList.remove('hidden');
+  setTimeout(() => adminAlert.classList.add('hidden'), 5000);
+}
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
 
 function playSuccessChime() {
   try {
     initAudio();
-    if (!audioCtx) return;
     const now = audioCtx.currentTime;
-
-    const osc1 = audioCtx.createOscillator();
-    const gain1 = audioCtx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(523.25, now); // C5
-    gain1.gain.setValueAtTime(0.2, now);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-    osc1.connect(gain1);
-    gain1.connect(audioCtx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.2);
-
-    const osc2 = audioCtx.createOscillator();
-    const gain2 = audioCtx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(783.99, now + 0.15); // G5
-    gain2.gain.setValueAtTime(0.25, now + 0.15);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
-    osc2.connect(gain2);
-    gain2.connect(audioCtx.destination);
-    osc2.start(now + 0.15);
-    osc2.stop(now + 0.45);
-  } catch (e) {
-    console.warn('Audio play error:', e);
-  }
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(660, now);
+    g.gain.setValueAtTime(0.2, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start(now);
+    o.stop(now + 0.3);
+  } catch (e) {}
 }
 
 function playErrorBuzzer() {
   try {
     initAudio();
-    if (!audioCtx) return;
     const now = audioCtx.currentTime;
-
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(140, now);
-    osc.frequency.linearRampToValueAtTime(110, now + 0.35);
-    gain.gain.setValueAtTime(0.3, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(now);
-    osc.stop(now + 0.35);
-  } catch (e) {
-    console.warn('Audio play error:', e);
-  }
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(140, now);
+    g.gain.setValueAtTime(0.25, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start(now);
+    o.stop(now + 0.35);
+  } catch (e) {}
 }
 
-// Session Check (Verified via Supabase Auth + admin_users RLS)
-async function checkAdminSession() {
-  localStorage.removeItem('admin_logged_in');
-  if (!supabase) {
-    showLogin();
-    return;
-  }
-
-  try {
-    // 1. Exchange PKCE ?code= if returning from Google OAuth
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    if (code) {
-      await supabase.auth.exchangeCodeForSession(code);
-      history.replaceState(null, '', window.location.pathname);
-    }
-
-    // 2. Handle implicit #access_token= if present
-    const hash = window.location.hash || '';
-    if (hash.includes('access_token=')) {
-      const hashParams = new URLSearchParams(hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
-      if (accessToken) {
-        await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken || ''
-        });
-      }
-      history.replaceState(null, '', window.location.pathname);
-    }
-
-    // 3. Listen to auth state changes
-    supabase.auth.onAuthStateChange(async (event) => {
-      if (event === 'SIGNED_OUT') {
-        resetAdminSessionState();
-        showLogin();
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        await verifyAdminUserAndLoad();
-      }
-    });
-
-    await verifyAdminUserAndLoad();
-  } catch (err) {
-    console.error('Admin auth check error:', err);
-    resetAdminSessionState();
-    showLogin();
-  }
-}
-
-function resetAdminSessionState() {
-  isAdminLoggedIn = false;
-  currentAdminEmail = null;
-  if (adminRealtimeChannel && supabase) {
-    supabase.removeChannel(adminRealtimeChannel);
-    adminRealtimeChannel = null;
-  }
-}
-
-async function verifyAdminUserAndLoad() {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user || !user.email) {
-    resetAdminSessionState();
-    if (adminUnauthorizedBox) adminUnauthorizedBox.classList.add('hidden');
-    showLogin();
-    return;
-  }
-
-  const email = user.email.toLowerCase().trim();
-  const { data: adminRow, error: adminErr } = await supabase
-    .from('admin_users')
-    .select('email, role')
-    .ilike('email', email)
-    .maybeSingle();
-
-  if (adminErr || !adminRow) {
-    resetAdminSessionState();
-    showLogin();
-    if (adminUnauthorizedBox && adminUnauthorizedMsg) {
-      adminUnauthorizedMsg.textContent = `Signed in as ${email}, which is not authorized as gate staff.`;
-      adminUnauthorizedBox.classList.remove('hidden');
-    }
-    return;
-  }
-
-  if (adminUnauthorizedBox) adminUnauthorizedBox.classList.add('hidden');
-  const wasLoggedIn = isAdminLoggedIn && currentAdminEmail === adminRow.email;
-  isAdminLoggedIn = true;
-  currentAdminEmail = adminRow.email;
-  showDashboard();
-
-  if (!wasLoggedIn) {
-    await loadDepartmentsFilter();
-    await loadStats();
-    await loadSystemConfig();
-    await loadPayments();
-    await loadDatasheet();
-    setupRealtimeSubscription();
-  }
-}
-
-function signInAdminWithGoogle() {
-  if (!supabase) return;
-  if (window.location.protocol === 'file:') {
-    showAdminAlert('Google OAuth cannot run from file://. Open your deployed URL or http://localhost.', 'error');
-    return;
-  }
-  const redirectUrl = window.location.origin + window.location.pathname;
-  if (adminGoogleSignInBtn) {
-    adminGoogleSignInBtn.disabled = true;
-    adminGoogleSignInBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Redirecting to Google...</span>';
-  }
-  window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
-}
-
-async function handleAdminLogout() {
-  stopCamera();
-  try {
-    if (supabase) await supabase.auth.signOut();
-  } catch (e) {
-    console.warn('Admin sign out error:', e);
-  }
-  localStorage.removeItem('admin_logged_in');
-  resetAdminSessionState();
-  if (adminUnauthorizedBox) adminUnauthorizedBox.classList.add('hidden');
-  showLogin();
-  showAdminAlert('Logged out of Admin Gate.', 'info');
-}
-
-// View Switches
 function showLogin() {
   adminLoginSection.classList.remove('hidden');
   adminDashboardSection.classList.add('hidden');
@@ -290,1240 +111,704 @@ function showDashboard() {
   adminControls.classList.add('flex');
 }
 
-function switchTab(tab) {
-  const activeClass = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
-  const inactiveClass = 'px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200';
-
-  if (tab === 'scanner') {
-    tabScannerBtn.className = activeClass;
-    if (tabPaymentsBtn) tabPaymentsBtn.className = inactiveClass;
-    tabDataSheetBtn.className = inactiveClass;
-    scannerView.classList.remove('hidden');
-    if (paymentsView) paymentsView.classList.add('hidden');
-    datasheetView.classList.add('hidden');
-  } else if (tab === 'payments') {
-    if (tabPaymentsBtn) tabPaymentsBtn.className = activeClass;
-    tabScannerBtn.className = inactiveClass;
-    tabDataSheetBtn.className = inactiveClass;
-    scannerView.classList.add('hidden');
-    if (paymentsView) paymentsView.classList.remove('hidden');
-    datasheetView.classList.add('hidden');
-    loadPayments();
-  } else {
-    tabDataSheetBtn.className = activeClass;
-    tabScannerBtn.className = inactiveClass;
-    if (tabPaymentsBtn) tabPaymentsBtn.className = inactiveClass;
-    scannerView.classList.add('hidden');
-    if (paymentsView) paymentsView.classList.add('hidden');
-    datasheetView.classList.remove('hidden');
-    loadDatasheet();
+function resetAdminState() {
+  currentAdmin = null;
+  if (adminRealtimeChannel && supabase) {
+    supabase.removeChannel(adminRealtimeChannel);
+    adminRealtimeChannel = null;
   }
 }
 
-// Live Camera Scanner using Html5Qrcode
-async function toggleCamera() {
-  if (isScannerRunning) {
-    stopCamera();
-  } else {
-    startCamera();
+async function checkAdminSession() {
+  localStorage.removeItem('admin_logged_in');
+  if (!supabase) { showLogin(); return; }
+
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      await supabase.auth.exchangeCodeForSession(code);
+      history.replaceState(null, '', window.location.pathname);
+    }
+
+    const hash = window.location.hash || '';
+    if (hash.includes('access_token=')) {
+      const hp = new URLSearchParams(hash.substring(1));
+      const accessToken = hp.get('access_token');
+      const refreshToken = hp.get('refresh_token');
+      if (accessToken) {
+        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken || '' });
+      }
+      history.replaceState(null, '', window.location.pathname);
+    }
+
+    supabase.auth.onAuthStateChange(async (event) => {
+      if (event === 'SIGNED_OUT') {
+        resetAdminState();
+        showLogin();
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        await verifyAdminAndLoad();
+      }
+    });
+
+    await verifyAdminAndLoad();
+  } catch (err) {
+    console.error('Admin auth error:', err);
+    resetAdminState();
+    showLogin();
   }
 }
 
+async function verifyAdminAndLoad() {
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user || !user.email) {
+    resetAdminState();
+    adminUnauthorizedBox?.classList.add('hidden');
+    showLogin();
+    return;
+  }
+
+  const email = user.email.toLowerCase().trim();
+  const { data: adminRow, error: adminErr } = await supabase
+    .from('admin_users')
+    .select('*, clubs(id, name)')
+    .ilike('email', email)
+    .maybeSingle();
+
+  if (adminErr || !adminRow) {
+    resetAdminState();
+    showLogin();
+    if (adminUnauthorizedBox && adminUnauthorizedMsg) {
+      adminUnauthorizedMsg.textContent = `Signed in as ${email}, which is not authorized as a Club President or Organizer.`;
+      adminUnauthorizedBox.classList.remove('hidden');
+    }
+    return;
+  }
+
+  adminUnauthorizedBox?.classList.add('hidden');
+  const alreadyLoaded = currentAdmin && currentAdmin.email === adminRow.email;
+  currentAdmin = adminRow;
+
+  if (adminRoleBadge) {
+    adminRoleBadge.textContent = adminRow.role === 'super_admin'
+      ? 'SUPER ADMIN'
+      : `${adminRow.clubs?.name || 'CLUB'} PRESIDENT`;
+  }
+
+  const presTab = document.getElementById('tabPresidentsBtn');
+  if (presTab) presTab.classList.toggle('hidden', adminRow.role !== 'super_admin');
+
+  showDashboard();
+  if (!alreadyLoaded) {
+    await loadClubs();
+    await loadManagedEvents();
+    if (adminRow.role === 'super_admin') await loadPresidentsList();
+    setupRealtimeSubscription();
+  }
+}
+
+function signInAdminWithGoogle() {
+  if (!supabase) return;
+  const redirectUrl = window.location.origin + window.location.pathname;
+  if (adminGoogleSignInBtn) {
+    adminGoogleSignInBtn.disabled = true;
+    adminGoogleSignInBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin text-lg text-indigo-600"></i><span class="text-slate-700">Redirecting to Google...</span>';
+  }
+  window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`;
+}
+
+async function handleAdminLogout() {
+  await stopCamera();
+  if (supabase) await supabase.auth.signOut();
+  resetAdminState();
+  adminUnauthorizedBox?.classList.add('hidden');
+  showLogin();
+}
+
+async function loadClubs() {
+  const { data } = await supabase.from('clubs').select('*').order('id');
+  allClubs = data || [];
+
+  const evClubSelect = document.getElementById('evClubId');
+  if (evClubSelect) {
+    const clubsForUser = currentAdmin.role === 'super_admin'
+      ? allClubs
+      : allClubs.filter(c => c.id === currentAdmin.club_id);
+    evClubSelect.innerHTML = clubsForUser.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  }
+
+  const presClubSelect = document.getElementById('presClubId');
+  if (presClubSelect) {
+    presClubSelect.innerHTML = allClubs.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  }
+}
+
+async function loadManagedEvents() {
+  let query = supabase.from('events').select('*, clubs(id, name)').order('start_time', { ascending: true });
+  if (currentAdmin.role !== 'super_admin' && currentAdmin.club_id) {
+    query = query.eq('club_id', currentAdmin.club_id);
+  }
+  const { data } = await query;
+  managedEvents = data || [];
+
+  if (activeEventSelect) {
+    if (managedEvents.length === 0) {
+      activeEventSelect.innerHTML = '<option value="">No events yet — click + Create Event</option>';
+      activeEventId = null;
+    } else {
+      activeEventSelect.innerHTML = managedEvents.map(ev =>
+        `<option value="${escapeHtml(ev.id)}">[${escapeHtml(ev.clubs?.name || 'Club')}] ${escapeHtml(ev.title)}</option>`
+      ).join('');
+      if (!activeEventId || !managedEvents.some(e => e.id === activeEventId)) {
+        activeEventId = managedEvents[0].id;
+      }
+      activeEventSelect.value = activeEventId;
+    }
+  }
+
+  renderAdminEventsGrid();
+  await loadActiveEventRegistrations();
+}
+
+async function loadActiveEventRegistrations() {
+  if (!activeEventId) {
+    eventRegistrations = [];
+    updateStatsAndTables();
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('registrations')
+    .select('*, attendees(*), teams(team_name, join_code), attendance(*)')
+    .eq('event_id', activeEventId)
+    .order('registered_at', { ascending: false });
+
+  if (error) {
+    console.error('Load registrations error:', error);
+    return;
+  }
+  eventRegistrations = data || [];
+  updateStatsAndTables();
+}
+
+function updateStatsAndTables() {
+  const total = eventRegistrations.length;
+  const present = eventRegistrations.filter(r => Array.isArray(r.attendance) ? r.attendance.length > 0 : !!r.attendance).length;
+  const pending = Math.max(0, total - present);
+  const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statPresent').textContent = present;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statRate').textContent = `${rate}%`;
+
+  const pendingPayCount = eventRegistrations.filter(r => r.payment_status === 'pending_verification').length;
+  const payBadge = document.getElementById('pendingPaymentsCountBadge');
+  if (payBadge) {
+    if (pendingPayCount > 0) {
+      payBadge.textContent = pendingPayCount;
+      payBadge.classList.remove('hidden');
+    } else {
+      payBadge.classList.add('hidden');
+    }
+  }
+
+  renderPaymentsTable();
+  renderDatasheetTable();
+}
+
+function renderAdminEventsGrid() {
+  const grid = document.getElementById('adminEventsGrid');
+  if (!grid) return;
+  if (managedEvents.length === 0) {
+    grid.innerHTML = '<div class="col-span-full solid-card rounded-xl p-8 text-center text-xs text-zinc-500">No events created yet. Click "+ Create Event" to publish your first club event.</div>';
+    return;
+  }
+
+  grid.innerHTML = managedEvents.map(ev => {
+    const dateStr = new Date(ev.start_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const isSelected = ev.id === activeEventId;
+    return `
+      <div class="solid-card rounded-xl p-4 space-y-3 border ${isSelected ? 'border-indigo-500/60' : 'border-zinc-800'}">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">${escapeHtml(ev.clubs?.name || 'Club')}</span>
+            <h4 class="text-sm font-semibold text-zinc-100 mt-0.5">${escapeHtml(ev.title)}</h4>
+            <p class="text-[11px] text-zinc-500 mt-0.5">${escapeHtml(dateStr)} &bull; ${escapeHtml(ev.venue || 'Campus')}</p>
+          </div>
+          <span class="px-2 py-0.5 rounded text-[10px] font-medium ${ev.registration_open ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/50' : 'bg-rose-950/60 text-rose-400 border border-rose-800/50'}">
+            ${ev.registration_open ? 'OPEN' : 'PAUSED'}
+          </span>
+        </div>
+        <div class="text-[11px] text-zinc-400 flex items-center justify-between">
+          <span>Format: ${escapeHtml(ev.participation_type)} (${ev.min_team_size}-${ev.max_team_size})</span>
+          <span>PW: ₹${escapeHtml(ev.pw_fee)} / Guest: ₹${escapeHtml(ev.guest_fee)}</span>
+        </div>
+        <div class="flex gap-2 pt-2 border-t border-zinc-800">
+          <button type="button" onclick="selectActiveEvent('${escapeHtml(ev.id)}')" class="btn-secondary flex-1 py-1.5 rounded-lg text-xs font-medium">${isSelected ? 'Selected' : 'Manage Gate'}</button>
+          <button type="button" onclick="toggleEventOpen('${escapeHtml(ev.id)}', ${ev.registration_open ? 'false' : 'true'})" class="px-3 py-1.5 rounded-lg text-xs font-medium ${ev.registration_open ? 'bg-rose-600/20 text-rose-400 border border-rose-800/50' : 'bg-emerald-600/20 text-emerald-400 border border-emerald-800/50'}">
+            ${ev.registration_open ? 'Pause' : 'Resume'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.selectActiveEvent = async function (eventId) {
+  activeEventId = eventId;
+  if (activeEventSelect) activeEventSelect.value = eventId;
+  renderAdminEventsGrid();
+  await loadActiveEventRegistrations();
+  switchTab('scanner');
+};
+
+window.toggleEventOpen = async function (eventId, nextOpen) {
+  const { error } = await supabase.from('events').update({ registration_open: nextOpen }).eq('id', eventId);
+  if (error) { showAdminAlert(error.message, 'error'); return; }
+  showAdminAlert(`Event registrations ${nextOpen ? 'resumed' : 'paused'}.`, 'success');
+  await loadManagedEvents();
+};
+
+async function handleCreateEvent(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitCreateEventBtn');
+  btn.disabled = true;
+  try {
+    const title = document.getElementById('evTitle').value.trim();
+    const clubId = Number(document.getElementById('evClubId').value);
+    const partType = document.getElementById('evPartType').value;
+    const minTeam = Math.max(1, Number(document.getElementById('evMinTeam').value || 1));
+    const maxTeam = Math.max(minTeam, Number(document.getElementById('evMaxTeam').value || minTeam));
+    const maxCapVal = document.getElementById('evMaxCapacity').value;
+
+    const { data, error } = await supabase
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title,
+        slug: slugify(title),
+        description: document.getElementById('evDesc').value.trim(),
+        venue: document.getElementById('evVenue').value.trim(),
+        start_time: new Date(document.getElementById('evStartTime').value).toISOString(),
+        participation_type: partType,
+        min_team_size: partType === 'solo' ? 1 : minTeam,
+        max_team_size: partType === 'solo' ? 1 : maxTeam,
+        pw_fee: Number(document.getElementById('evPwFee').value || 0),
+        guest_fee: Number(document.getElementById('evGuestFee').value || 0),
+        allow_pw_members: document.getElementById('evAllowPw').checked,
+        allow_guests: document.getElementById('evAllowGuests').checked,
+        max_capacity: maxCapVal ? Number(maxCapVal) : null,
+        status: 'published',
+        created_by: currentAdmin.email
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    document.getElementById('createEventModal').classList.add('hidden');
+    document.getElementById('createEventForm').reset();
+    activeEventId = data.id;
+    showAdminAlert(`Event "${title}" published!`, 'success');
+    await loadManagedEvents();
+  } catch (err) {
+    showAdminAlert(err.message || 'Failed to create event', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Scanner
 async function startCamera() {
   try {
     initAudio();
-    if (!html5QrScanner) {
-      html5QrScanner = new Html5Qrcode("reader");
-    }
-
-    const config = {
-      fps: 10,
-      qrbox: { width: 250, height: 250 },
-      aspectRatio: 1.0
-    };
-
-    await html5QrScanner.start(
-      { facingMode: "environment" },
-      config,
-      onQrCodeSuccess,
-      () => {}
-    );
-
+    if (!html5QrScanner) html5QrScanner = new Html5Qrcode('reader');
+    await html5QrScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 } }, (txt) => {
+      if (isProcessingScan) return;
+      isProcessingScan = true;
+      verifyAndMarkTicket(txt).finally(() => setTimeout(() => { isProcessingScan = false; }, 2200));
+    }, () => {});
     isScannerRunning = true;
-    toggleCameraBtn.textContent = 'Stop Camera';
-    toggleCameraBtn.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white transition';
+    document.getElementById('toggleCameraBtn').textContent = 'Stop Camera';
   } catch (err) {
-    console.error('Camera start error:', err);
-    showAdminAlert('Could not start camera: ' + (err.message || 'Check camera permissions'), 'error');
+    showAdminAlert('Camera error: ' + (err.message || err), 'error');
   }
 }
 
 async function stopCamera() {
   if (html5QrScanner && isScannerRunning) {
-    try {
-      await html5QrScanner.stop();
-      isScannerRunning = false;
-      toggleCameraBtn.textContent = 'Start Camera';
-      toggleCameraBtn.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-white hover:bg-zinc-200 text-zinc-950 transition';
-    } catch (err) {
-      console.warn('Camera stop notice:', err);
-    }
+    try { await html5QrScanner.stop(); } catch (e) {}
+    isScannerRunning = false;
+    const btn = document.getElementById('toggleCameraBtn');
+    if (btn) btn.textContent = 'Start Camera';
   }
 }
 
-// Throttle scan triggers
-let isProcessingScan = false;
-async function onQrCodeSuccess(decodedText) {
-  if (isProcessingScan) return;
-  isProcessingScan = true;
-
-  await verifyAndMarkTicket(decodedText);
-
-  setTimeout(() => {
-    isProcessingScan = false;
-  }, 2500);
-}
-
-// Verify Ticket with Supabase (CRITICAL: Once scanned, CANNOT be scanned again!)
 async function verifyAndMarkTicket(qrData) {
-  try {
-    let student = null;
-    let ticketToken = null;
-    let enrollmentId = null;
-    let rawSearch = '';
-
-    if (typeof qrData === 'object' && qrData !== null) {
-      ticketToken = qrData.ticket_token || qrData.ticketToken || qrData.token || qrData.ticket || null;
-      enrollmentId = qrData.enrollment_id || qrData.enrollmentId || qrData.roll_no || qrData.rollNo || qrData.id || null;
-    } else if (typeof qrData === 'string' || typeof qrData === 'number') {
-      const clean = String(qrData).trim();
-      rawSearch = clean;
-
-      let parsed = null;
-      try {
-        let jsonCandidate = clean;
-        if (jsonCandidate.startsWith('{') && jsonCandidate.endsWith('}')) {
-          if (!jsonCandidate.includes('"') && jsonCandidate.includes("'")) {
-            jsonCandidate = jsonCandidate.replace(/'/g, '"');
-          }
-        }
-        parsed = JSON.parse(jsonCandidate);
-      } catch (e) {
-        parsed = null;
-      }
-
-      // ONLY treat as JSON payload if it parsed into a non-null object (not a primitive number like 2501030001!)
-      if (parsed && typeof parsed === 'object') {
-        ticketToken = parsed.ticket_token || parsed.ticketToken || parsed.token || parsed.ticket || null;
-        enrollmentId = parsed.enrollment_id || parsed.enrollmentId || parsed.roll_no || parsed.rollNo || parsed.id || null;
-      } else {
-        // Primitive string, numeric roll number (e.g. 2501030001), URL, or ticket token
-        if (clean.startsWith('http://') || clean.startsWith('https://')) {
-          try {
-            const urlObj = new URL(clean);
-            ticketToken = urlObj.searchParams.get('ticket_token') || urlObj.searchParams.get('token') || urlObj.searchParams.get('ticket') || urlObj.searchParams.get('tkt');
-            enrollmentId = urlObj.searchParams.get('enrollment_id') || urlObj.searchParams.get('id') || urlObj.searchParams.get('roll') || urlObj.searchParams.get('roll_no');
-          } catch (urlErr) {}
-        }
-        if (!ticketToken && !enrollmentId) {
-          if (clean.toUpperCase().startsWith('TKT-')) {
-            ticketToken = clean.toUpperCase();
-          } else {
-            enrollmentId = clean;
-          }
-        }
-      }
-    }
-
-    ticketToken = ticketToken ? String(ticketToken).trim().toUpperCase() : null;
-    enrollmentId = enrollmentId ? String(enrollmentId).trim() : null;
-
-    console.log('[Scanner] Resolving ticket:', { ticketToken, enrollmentId, rawSearch });
-
-    // 1. PRIMARY LOOKUP: Match strictly by enrollment_id (Roll No / ID)
-    if (enrollmentId) {
-      const cleanEid = String(enrollmentId).trim();
-      let { data, error } = await supabase
-        .from('students')
-        .select('*')
-        .eq('enrollment_id', cleanEid)
-        .maybeSingle();
-      if (!error && data) {
-        student = data;
-      } else {
-        const upperId = cleanEid.toUpperCase();
-        const resUpper = await supabase
-          .from('students')
-          .select('*')
-          .eq('enrollment_id', upperId)
-          .maybeSingle();
-        if (!resUpper.error && resUpper.data) student = resUpper.data;
-      }
-    }
-
-    // 2. SECONDARY LOOKUP: Look up by ticketToken if enrollmentId did not match
-    if (!student && ticketToken) {
-      const { data, error } = await supabase
-        .from('students')
-        .select('*')
-        .eq('ticket_token', ticketToken)
-        .maybeSingle();
-      if (!error && data) student = data;
-    }
-
-    // 3. TERTIARY LOOKUP: Fallback lookup by raw search (ID, email, or phone)
-    if (!student && rawSearch) {
-      const cleanSearch = rawSearch.trim();
-      let { data: byId } = await supabase
-        .from('students')
-        .select('*')
-        .eq('enrollment_id', cleanSearch)
-        .maybeSingle();
-      if (!byId) {
-        const resUpper = await supabase
-          .from('students')
-          .select('*')
-          .eq('enrollment_id', cleanSearch.toUpperCase())
-          .maybeSingle();
-        byId = resUpper.data;
-      }
-      if (byId) {
-        student = byId;
-      } else if (cleanSearch.includes('@')) {
-        const { data } = await supabase
-          .from('students')
-          .select('*')
-          .eq('email', cleanSearch.toLowerCase())
-          .maybeSingle();
-        if (data) student = data;
-      } else if (/^\d{10}$/.test(cleanSearch)) {
-        const { data } = await supabase
-          .from('students')
-          .select('*')
-          .eq('phone', cleanSearch)
-          .maybeSingle();
-        if (data) student = data;
-      }
-
-      // Strategy 4: Search by name (case-insensitive substring)
-      if (!student && cleanSearch.length >= 3) {
-        const { data: nameMatches } = await supabase
-          .from('students')
-          .select('*')
-          .ilike('name', `%${cleanSearch}%`)
-          .limit(5);
-        if (nameMatches && nameMatches.length > 0) {
-          // If 1 exact or closest match, select it
-          student = nameMatches[0];
-        }
-      }
-    }
-
-    if (!student) {
-      console.warn('[Scanner] No matching attendee found for query:', { ticketToken, enrollmentId, rawSearch });
-      playErrorBuzzer();
-      renderScanResult('invalid', { 
-        message: 'Ticket not found in cloud database.',
-        scannedText: rawSearch
-      });
-      return;
-    }
-
-    // 2. CHECK PAYMENT STATUS (For External Guests)
-    if (student.payment_status === 'pending_verification') {
-      playErrorBuzzer();
-      renderScanResult('payment_pending', { student });
-      addRecentScan(student, 'PAYMENT UNVERIFIED', new Date().toISOString());
-      return;
-    }
-
-    if (student.payment_status === 'rejected') {
-      playErrorBuzzer();
-      renderScanResult('payment_rejected', { student });
-      addRecentScan(student, 'PAYMENT REJECTED', new Date().toISOString());
-      return;
-    }
-
-    // 3. CHECK IF TICKET HAS ALREADY BEEN SCANNED
-    const { data: existingScan } = await supabase
-      .from('attendance')
-      .select('*')
-      .eq('enrollment_id', student.enrollment_id)
-      .maybeSingle();
-
-    if (existingScan) {
-      // DUPLICATE SCAN REJECTED!
-      playErrorBuzzer();
-      renderScanResult('already_scanned', {
-        student,
-        scannedAt: existingScan.scanned_at
-      });
-      addRecentScan(student, 'DUPLICATE REJECTED', existingScan.scanned_at);
-      return;
-    }
-
-    // 4. RECORD FRESH ATTENDANCE IN SUPABASE
-    const scanTime = new Date().toISOString();
-    const { error: insertError } = await supabase
-      .from('attendance')
-      .insert({
-        enrollment_id: student.enrollment_id,
-        status: 'Present',
-        scanned_at: scanTime,
-        scanned_by: currentAdminEmail || 'Admin Scanner'
-      });
-
-    if (insertError) {
-      playErrorBuzzer();
-      renderScanResult('already_scanned', { student, scannedAt: scanTime });
-      return;
-    }
-
-    // 5. ENTRY APPROVED!
-    playSuccessChime();
-    renderScanResult('success', {
-      student,
-      scannedAt: scanTime
-    });
-    addRecentScan(student, 'VERIFIED', scanTime);
-    await loadStats();
-    await loadDatasheet();
-  } catch (err) {
-    console.error('[Scanner Error]:', err);
-    playErrorBuzzer();
-    renderScanResult('error', { message: 'Verification error: ' + (err.message || 'Network communication failure') });
+  if (!activeEventId) {
+    showAdminAlert('Select or create an Active Event first.', 'error');
+    return;
   }
-}
 
-// Render Result Card in Scanner View
-function renderScanResult(type, data) {
-  if (type === 'success') {
-    const s = data.student;
-    const roleLabel = s.user_type === 'guest'
-      ? `${s.company || 'External'} (Guest Pass)`
-      : (s.year === 'Faculty' ? `${s.department} (Faculty)` : `${s.department} (Yr ${s.year})`);
+  let ticketToken = null;
+  let registrationId = null;
+  let qrEventId = null;
+  const clean = String(qrData || '').trim();
 
-    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-emerald-600/50 bg-emerald-950/20 text-center';
-    scanResultBox.innerHTML = `
-      <div class="w-12 h-12 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-emerald-500/20">
-        <i class="ph-bold ph-check-circle"></i>
-      </div>
-      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider inline-block mb-1.5">
-        Entry Approved
-      </span>
-      <h3 class="text-base font-semibold text-zinc-100">${escapeHtml(s.name)}</h3>
-      <p class="text-xs font-mono text-zinc-400 mt-0.5">${escapeHtml(s.enrollment_id)}</p>
-      
-      <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-zinc-800 text-xs text-left">
-        <div>
-          <span class="text-zinc-500 block text-[10px]">Affiliation / Role</span>
-          <span class="text-zinc-300 font-medium truncate">${escapeHtml(roleLabel)}</span>
-        </div>
-        <div>
-          <span class="text-zinc-500 block text-[10px]">Contact</span>
-          <span class="text-zinc-300 font-medium">${escapeHtml(s.phone)}</span>
-        </div>
-      </div>
-      <p class="text-[11px] text-zinc-400 mt-3 flex items-center justify-center space-x-1">
-        <i class="ph ph-clock"></i>
-        <span>Marked Present at ${escapeHtml(new Date(data.scannedAt).toLocaleTimeString())}</span>
-      </p>
-    `;
-  } else if (type === 'payment_pending') {
-    const s = data.student;
-    const safeEid = escapeHtml(s.enrollment_id);
-    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-amber-600/50 bg-amber-950/20 text-center';
-    scanResultBox.innerHTML = `
-      <div class="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-amber-500/20">
-        <i class="ph-bold ph-hourglass-high"></i>
-      </div>
-      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
-        Payment Pending Verification
-      </span>
-      <h3 class="text-base font-semibold text-zinc-100">${escapeHtml(s.name)}</h3>
-      <p class="text-xs font-mono text-amber-300 mt-0.5">${safeEid} &bull; ${escapeHtml(s.company || 'External Guest')}</p>
-
-      <div class="p-3 mt-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-left space-y-1.5">
-        <div class="flex justify-between">
-          <span class="text-zinc-500">Amount Due:</span>
-          <span class="font-bold text-emerald-400">₹500.00</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-zinc-500">Submitted UTR:</span>
-          <span class="font-mono font-bold text-amber-300 select-all">${escapeHtml(s.utr_number || 'N/A')}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-zinc-500">Contact:</span>
-          <span class="text-zinc-300">${escapeHtml(s.phone)}</span>
-        </div>
-      </div>
-
-      <button onclick="approveAndCheckIn('${safeEid}')"
-              class="btn-primary w-full py-2.5 px-3 mt-3.5 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md">
-        <i class="ph-bold ph-check"></i>
-        <span>Confirm Payment & Check In Now</span>
-      </button>
-    `;
-  } else if (type === 'payment_rejected') {
-    const s = data.student;
-    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-rose-600/50 bg-rose-950/20 text-center';
-    scanResultBox.innerHTML = `
-      <div class="w-12 h-12 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-rose-500/20">
-        <i class="ph-bold ph-x-circle"></i>
-      </div>
-      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase tracking-wider inline-block mb-1.5">
-        Payment Rejected
-      </span>
-      <h3 class="text-base font-semibold text-zinc-100">${s ? escapeHtml(s.name) : 'Unknown Attendee'}</h3>
-      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? escapeHtml(s.enrollment_id) : ''}</p>
-      <p class="text-xs text-zinc-400 mt-2">The ₹500 payment submission for this pass was rejected by staff.</p>
-    `;
-  } else if (type === 'already_scanned') {
-    const s = data.student;
-    const formattedTime = new Date(data.scannedAt).toLocaleString();
-    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-rose-600/50 bg-rose-950/20 text-center';
-    scanResultBox.innerHTML = `
-      <div class="w-12 h-12 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-rose-500/20">
-        <i class="ph-bold ph-prohibit"></i>
-      </div>
-      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase tracking-wider inline-block mb-1.5">
-        Duplicate Scan Rejected
-      </span>
-      <h3 class="text-base font-semibold text-zinc-100">${s ? escapeHtml(s.name) : 'Unknown Attendee'}</h3>
-      <p class="text-xs font-mono text-rose-300 mt-0.5">${s ? escapeHtml(s.enrollment_id) : ''}</p>
-      
-      <div class="p-3 mt-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
-        <p class="font-medium text-rose-300">Ticket has already been used</p>
-        <p class="text-[11px] mt-1 text-zinc-400">
-          Scanned on: <strong>${escapeHtml(formattedTime)}</strong>
-        </p>
-      </div>
-    `;
-  } else {
-    scanResultBox.className = 'solid-card rounded-xl p-6 transition-all border border-amber-600/50 bg-amber-950/20 text-center';
-    scanResultBox.innerHTML = `
-      <div class="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-3 border border-amber-500/20">
-        <i class="ph-bold ph-warning-circle"></i>
-      </div>
-      <span class="px-2.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider inline-block mb-1.5">
-        Invalid / Unrecognized Ticket
-      </span>
-      <p class="text-xs text-zinc-300 font-medium mt-1">${escapeHtml(data.message || 'Ticket not found in cloud database.')}</p>
-      ${data.scannedText ? `<div class="mt-2.5 p-2 rounded bg-black/60 border border-zinc-800 text-[11px] font-mono text-zinc-300 break-all select-all">Input: "${escapeHtml(data.scannedText)}"</div>` : ''}
-      <p class="text-[11px] text-zinc-500 mt-2">Try entering Roll Number, Name, or Phone in the box below, or check in from the DataSheet tab.</p>
-    `;
-  }
-}
-
-// 1-Click Approve Payment and Immediately Admit Attendee
-async function approveAndCheckIn(enrollmentId) {
   try {
-    showAdminAlert(`Approving payment for ${enrollmentId}...`, 'info');
-    const { error: updateError } = await supabase
-      .from('students')
-      .update({ payment_status: 'approved' })
-      .eq('enrollment_id', enrollmentId);
-
-    if (updateError) throw updateError;
-
-    showAdminAlert(`Payment approved! Admitting attendee...`, 'success');
-    await loadPayments();
-    await verifyAndMarkTicket(enrollmentId);
+    const parsed = JSON.parse(clean);
+    if (parsed && typeof parsed === 'object') {
+      ticketToken = parsed.ticket_token || null;
+      registrationId = parsed.registration_id || null;
+      qrEventId = parsed.event_id || null;
+    }
   } catch (e) {
-    showAdminAlert(`Approval error: ${e.message || e}`, 'error');
+    if (clean.toUpperCase().startsWith('TKT-')) ticketToken = clean.toUpperCase();
   }
-}
-window.approveAndCheckIn = approveAndCheckIn;
 
-// Add to Recent Scans Activity Log
-function addRecentScan(student, status, timestamp) {
-  if (!student) return;
-  recentScans.unshift({
-    name: student.name,
-    enrollment: student.enrollment_id,
-    dept: student.department,
-    status,
-    time: new Date(timestamp).toLocaleTimeString()
+  if (qrEventId && qrEventId !== activeEventId) {
+    playErrorBuzzer();
+    renderScanBox('error', { message: 'This ticket belongs to a DIFFERENT event!' });
+    return;
+  }
+
+  let reg = null;
+  if (registrationId) {
+    reg = eventRegistrations.find(r => r.id === registrationId);
+  }
+  if (!reg && ticketToken) {
+    reg = eventRegistrations.find(r => r.ticket_token === ticketToken.toUpperCase());
+  }
+  if (!reg && clean) {
+    reg = eventRegistrations.find(r => r.attendees?.enrollment_id?.toUpperCase() === clean.toUpperCase());
+  }
+
+  if (!reg) {
+    playErrorBuzzer();
+    renderScanBox('error', { message: 'No matching registration found for this event.' });
+    return;
+  }
+
+  if (reg.payment_status === 'pending_verification') {
+    playErrorBuzzer();
+    renderScanBox('payment_pending', { reg });
+    return;
+  }
+  if (reg.payment_status === 'rejected') {
+    playErrorBuzzer();
+    renderScanBox('error', { message: 'Payment for this pass was rejected.' });
+    return;
+  }
+
+  const alreadyAtt = Array.isArray(reg.attendance) ? reg.attendance[0] : reg.attendance;
+  if (alreadyAtt) {
+    playErrorBuzzer();
+    renderScanBox('duplicate', { reg, scannedAt: alreadyAtt.scanned_at });
+    addRecentScan(reg, 'DUPLICATE');
+    return;
+  }
+
+  const scanTime = new Date().toISOString();
+  const { error } = await supabase.from('attendance').insert({
+    registration_id: reg.id,
+    event_id: activeEventId,
+    status: 'Present',
+    scanned_at: scanTime,
+    scanned_by: currentAdmin.email
   });
 
-  if (recentScans.length > 8) recentScans.pop();
+  if (error) {
+    playErrorBuzzer();
+    renderScanBox('duplicate', { reg, scannedAt: scanTime });
+    return;
+  }
 
-  recentScansList.innerHTML = recentScans.map(item => `
-    <div class="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 flex items-center justify-between text-xs">
-      <div>
-        <p class="font-medium text-zinc-200">${escapeHtml(item.name)} <span class="font-mono text-[11px] text-zinc-500">(${escapeHtml(item.enrollment)})</span></p>
-        <p class="text-[10px] text-zinc-500">${escapeHtml(item.dept)}</p>
-      </div>
-      <div class="text-right">
-        <span class="text-[10px] font-medium px-2 py-0.5 rounded ${item.status === 'VERIFIED' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-900/50' : 'bg-rose-950/60 text-rose-400 border border-rose-900/50'}">
-          ${escapeHtml(item.status)}
-        </span>
-        <p class="text-[10px] text-zinc-500 mt-0.5">${escapeHtml(item.time)}</p>
-      </div>
+  playSuccessChime();
+  renderScanBox('success', { reg, scannedAt: scanTime });
+  addRecentScan(reg, 'VERIFIED');
+  await loadActiveEventRegistrations();
+}
+
+function renderScanBox(type, data) {
+  const box = document.getElementById('scanResultBox');
+  if (!box) return;
+  if (type === 'success') {
+    const att = data.reg.attendees || {};
+    box.className = 'solid-card rounded-xl p-6 text-center border border-emerald-600/50 bg-emerald-950/20';
+    box.innerHTML = `
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">ENTRY APPROVED</span>
+      <h3 class="text-base font-semibold text-white mt-2">${escapeHtml(att.name)}</h3>
+      <p class="text-xs font-mono text-zinc-400">${escapeHtml(att.enrollment_id)}</p>
+      ${data.reg.teams ? `<p class="text-xs text-indigo-400 mt-1">Team: ${escapeHtml(data.reg.teams.team_name)}</p>` : ''}
+      <p class="text-[11px] text-zinc-400 mt-2">Checked in at ${escapeHtml(new Date(data.scannedAt).toLocaleTimeString())}</p>
+    `;
+  } else if (type === 'duplicate') {
+    const att = data.reg.attendees || {};
+    box.className = 'solid-card rounded-xl p-6 text-center border border-rose-600/50 bg-rose-950/20';
+    box.innerHTML = `
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/20 text-rose-300">DUPLICATE SCAN REJECTED</span>
+      <h3 class="text-base font-semibold text-white mt-2">${escapeHtml(att.name)}</h3>
+      <p class="text-xs text-rose-300 mt-1">Already scanned at ${escapeHtml(new Date(data.scannedAt).toLocaleTimeString())}</p>
+    `;
+  } else if (type === 'payment_pending') {
+    const att = data.reg.attendees || {};
+    box.className = 'solid-card rounded-xl p-6 text-center border border-amber-600/50 bg-amber-950/20';
+    box.innerHTML = `
+      <span class="px-2.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300">PAYMENT PENDING</span>
+      <h3 class="text-base font-semibold text-white mt-2">${escapeHtml(att.name)}</h3>
+      <p class="text-xs font-mono text-amber-300 mt-1">UTR: ${escapeHtml(data.reg.utr_number || 'N/A')} (₹${escapeHtml(data.reg.amount_paid)})</p>
+    `;
+  } else {
+    box.className = 'solid-card rounded-xl p-6 text-center border border-amber-600/50 bg-amber-950/20';
+    box.innerHTML = `<p class="text-xs text-amber-300 font-medium">${escapeHtml(data.message || 'Invalid ticket')}</p>`;
+  }
+}
+
+function addRecentScan(reg, status) {
+  const att = reg.attendees || {};
+  recentScans.unshift({ name: att.name, id: att.enrollment_id, status, time: new Date().toLocaleTimeString() });
+  if (recentScans.length > 8) recentScans.pop();
+  document.getElementById('recentScansList').innerHTML = recentScans.map(i => `
+    <div class="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800 flex items-center justify-between">
+      <div><p class="text-zinc-200 font-medium">${escapeHtml(i.name)}</p><p class="text-[10px] font-mono text-zinc-500">${escapeHtml(i.id)}</p></div>
+      <div class="text-right"><span class="text-[10px] font-semibold ${i.status === 'VERIFIED' ? 'text-emerald-400' : 'text-rose-400'}">${escapeHtml(i.status)}</span><p class="text-[10px] text-zinc-500">${escapeHtml(i.time)}</p></div>
     </div>
   `).join('');
 }
 
-// Load Stats from Supabase
-async function loadStats() {
-  try {
-    const { count: total } = await supabase.from('students').select('*', { count: 'exact', head: true });
-    const { count: present } = await supabase.from('attendance').select('*', { count: 'exact', head: true });
-
-    const totalCount = total || 0;
-    const presentCount = present || 0;
-    const pendingCount = Math.max(0, totalCount - presentCount);
-    const rate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
-
-    document.getElementById('statTotal').textContent = totalCount;
-    document.getElementById('statPresent').textContent = presentCount;
-    document.getElementById('statPending').textContent = pendingCount;
-    document.getElementById('statRate').textContent = rate + '%';
-  } catch (e) {
-    console.error('Stats load error:', e);
-  }
-}
-
-// Load Departments for Filter from Supabase
-async function loadDepartmentsFilter() {
-  const fallbackDepartments = [
-    { name: "School of Technology", code: "SOT" },
-    { name: "School of Management", code: "SOM" },
-    { name: "School of Healthcare", code: "SOH" }
-  ];
-
-  try {
-    const { data: departments } = await supabase.from('departments').select('name, code').order('name');
-    const list = (departments && departments.length > 0) ? departments : fallbackDepartments;
-
-    if (filterDept) {
-      filterDept.innerHTML = '<option value="ALL">All Departments</option>';
-      list.forEach(d => {
-        const opt = document.createElement('option');
-        const deptLabel = `${d.name} (${d.code})`;
-        opt.value = deptLabel;
-        opt.textContent = deptLabel;
-        filterDept.appendChild(opt);
-      });
-    }
-  } catch (e) {
-    console.error('Dept filter load error:', e);
-    if (filterDept) {
-      filterDept.innerHTML = '<option value="ALL">All Departments</option>';
-      fallbackDepartments.forEach(d => {
-        const opt = document.createElement('option');
-        const deptLabel = `${d.name} (${d.code})`;
-        opt.value = deptLabel;
-        opt.textContent = deptLabel;
-        filterDept.appendChild(opt);
-      });
-    }
-  }
-}
-
-// Load Payments from Supabase (External Guests UPI ₹500)
-async function loadPayments() {
-  try {
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .or('user_type.eq.guest,amount_paid.gt.0,utr_number.not.is.null')
-      .order('registered_at', { ascending: false });
-
-    if (error) throw error;
-    paymentsData = data || [];
-
-    // Stats
-    const total = paymentsData.length;
-    const pending = paymentsData.filter(p => p.payment_status === 'pending_verification').length;
-    const approved = paymentsData.filter(p => p.payment_status === 'approved').length;
-
-    if (statGuestTotal) statGuestTotal.textContent = total;
-    if (statGuestPending) statGuestPending.textContent = pending;
-    if (statGuestApproved) statGuestApproved.textContent = approved;
-
-    if (pendingPaymentsCountBadge) {
-      if (pending > 0) {
-        pendingPaymentsCountBadge.textContent = pending;
-        pendingPaymentsCountBadge.classList.remove('hidden');
-      } else {
-        pendingPaymentsCountBadge.classList.add('hidden');
-      }
-    }
-
-    renderPaymentsTable();
-  } catch (e) {
-    console.error('Payments load error:', e);
-  }
-}
-
-// Render Payments Table
 function renderPaymentsTable() {
-  if (!paymentsBody) return;
-  const searchTerm = (paymentSearch ? paymentSearch.value : '').toLowerCase().trim();
-  const statusFilter = filterPaymentStatus ? filterPaymentStatus.value : 'ALL';
+  const body = document.getElementById('paymentsBody');
+  if (!body) return;
+  const q = (document.getElementById('paymentSearch')?.value || '').toLowerCase().trim();
+  const statusFilter = document.getElementById('filterPaymentStatus')?.value || 'ALL';
 
-  const filtered = paymentsData.filter(row => {
-    const matchSearch = !searchTerm ||
-      (row.name && row.name.toLowerCase().includes(searchTerm)) ||
-      (row.enrollment_id && row.enrollment_id.toLowerCase().includes(searchTerm)) ||
-      (row.company && row.company.toLowerCase().includes(searchTerm)) ||
-      (row.utr_number && row.utr_number.toLowerCase().includes(searchTerm)) ||
-      (row.phone && row.phone.includes(searchTerm));
-
-    const matchStatus = (statusFilter === 'ALL') || (row.payment_status === statusFilter);
-    return matchSearch && matchStatus;
+  const paid = eventRegistrations.filter(r => Number(r.amount_paid || 0) > 0 || r.utr_number);
+  const filtered = paid.filter(r => {
+    const att = r.attendees || {};
+    const matchQ = !q
+      || (att.name && att.name.toLowerCase().includes(q))
+      || (r.utr_number && r.utr_number.toLowerCase().includes(q))
+      || (r.attendee_email && r.attendee_email.toLowerCase().includes(q));
+    const matchS = statusFilter === 'ALL' || r.payment_status === statusFilter;
+    return matchQ && matchS;
   });
 
   if (filtered.length === 0) {
-    paymentsBody.innerHTML = `
-      <tr>
-        <td colspan="8" class="text-center py-8 text-zinc-500">
-          No external guest payments match the filter criteria.
-        </td>
-      </tr>
-    `;
+    body.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-zinc-500">No paid registrations for this event.</td></tr>';
     return;
   }
 
-  paymentsBody.innerHTML = filtered.map(p => {
-    const isPending = p.payment_status === 'pending_verification';
-    const isApproved = p.payment_status === 'approved';
-
-    let statusBadge = '';
-    if (isPending) {
-      statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60">Pending</span>';
-    } else if (isApproved) {
-      statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">Approved</span>';
-    } else {
-      statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/60">Rejected</span>';
-    }
-
-    const safeEid = escapeHtml(p.enrollment_id);
-    const safeUtr = escapeHtml(p.utr_number || '');
+  body.innerHTML = filtered.map(r => {
+    const att = r.attendees || {};
+    const isPending = r.payment_status === 'pending_verification';
     return `
-      <tr class="hover:bg-zinc-900/40 transition">
-        <td class="py-2.5 px-3.5 font-mono text-zinc-300 font-medium whitespace-nowrap">${safeEid}</td>
-        <td class="py-2.5 px-3.5 font-semibold text-zinc-100 whitespace-nowrap">${escapeHtml(p.name)}</td>
-        <td class="py-2.5 px-3.5 text-zinc-300">${escapeHtml(p.company || 'External Guest')}</td>
-        <td class="py-2.5 px-3.5 text-zinc-400 whitespace-nowrap">
-          <div>${escapeHtml(p.phone)}</div>
-          <div class="text-[10px] text-zinc-500 truncate max-w-[150px]">${escapeHtml(p.email)}</div>
-        </td>
-        <td class="py-2.5 px-3.5 font-mono font-bold text-amber-400 whitespace-nowrap select-all">
-          <div class="flex items-center space-x-1">
-            <span>${safeUtr || 'N/A'}</span>
-            ${p.utr_number ? `<button onclick="navigator.clipboard.writeText('${safeUtr}'); showAdminAlert('UTR copied!', 'success');" title="Copy UTR" class="p-1 text-zinc-500 hover:text-zinc-200"><i class="ph ph-copy text-xs"></i></button>` : ''}
-          </div>
-        </td>
-        <td class="py-2.5 px-3.5 text-center font-bold text-emerald-400 font-mono whitespace-nowrap">₹${escapeHtml(p.amount_paid || 500)}</td>
-        <td class="py-2.5 px-3.5 whitespace-nowrap">${statusBadge}</td>
-        <td class="py-2.5 px-3.5 text-center whitespace-nowrap">
+      <tr>
+        <td class="py-2.5 px-3"><div class="font-medium text-zinc-100">${escapeHtml(att.name)}</div><div class="text-[10px] text-zinc-500">${escapeHtml(r.attendee_email)}</div></td>
+        <td class="py-2.5 px-3 font-mono text-zinc-300">${escapeHtml(att.enrollment_id)}</td>
+        <td class="py-2.5 px-3 text-zinc-400">${r.teams ? escapeHtml(r.teams.team_name) : 'Solo'}</td>
+        <td class="py-2.5 px-3 font-mono text-amber-400">${escapeHtml(r.utr_number || 'N/A')}</td>
+        <td class="py-2.5 px-3 font-mono text-emerald-400">₹${escapeHtml(r.amount_paid)}</td>
+        <td class="py-2.5 px-3">${escapeHtml(r.payment_status)}</td>
+        <td class="py-2.5 px-3 text-center">
           ${isPending ? `
-            <div class="inline-flex space-x-1.5">
-              <button onclick="approveGuestPayment('${safeEid}')"
-                      class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition inline-flex items-center space-x-1 shadow-sm">
-                <i class="ph-bold ph-check"></i>
-                <span>Approve</span>
-              </button>
-              <button onclick="rejectGuestPayment('${safeEid}')"
-                      class="px-2 py-1 rounded text-xs text-rose-400 hover:bg-rose-950/40 border border-rose-900/40 transition">
-                <span>Reject</span>
-              </button>
-            </div>
-          ` : `
-            <span class="text-xs text-zinc-500 italic">${isApproved ? 'Verified' : 'Rejected'}</span>
-          `}
+            <button onclick="setPaymentStatus('${escapeHtml(r.id)}', 'approved')" class="px-2 py-1 rounded bg-emerald-600 text-white text-[11px] font-semibold mr-1">Approve</button>
+            <button onclick="setPaymentStatus('${escapeHtml(r.id)}', 'rejected')" class="px-2 py-1 rounded text-rose-400 border border-rose-900/50 text-[11px]">Reject</button>
+          ` : '<span class="text-zinc-500 italic">Reviewed</span>'}
         </td>
       </tr>
     `;
   }).join('');
 }
 
-async function approveGuestPayment(enrollmentId) {
-  try {
-    showAdminAlert(`Approving payment for ${enrollmentId}...`, 'info');
-    const { error } = await supabase
-      .from('students')
-      .update({ payment_status: 'approved' })
-      .eq('enrollment_id', enrollmentId);
+window.setPaymentStatus = async function (regId, statusVal) {
+  const { error } = await supabase.from('registrations').update({ payment_status: statusVal }).eq('id', regId);
+  if (error) { showAdminAlert(error.message, 'error'); return; }
+  showAdminAlert(`Payment marked as ${statusVal}.`, 'success');
+  await loadActiveEventRegistrations();
+};
 
-    if (error) throw error;
-    showAdminAlert(`Payment for ${enrollmentId} approved successfully!`, 'success');
-    await loadPayments();
-    await loadDatasheet();
-  } catch (e) {
-    showAdminAlert(`Approval error: ${e.message || e}`, 'error');
-  }
-}
-window.approveGuestPayment = approveGuestPayment;
-
-async function rejectGuestPayment(enrollmentId) {
-  if (!confirm(`Reject payment submission for ${enrollmentId}?`)) return;
-  try {
-    const { error } = await supabase
-      .from('students')
-      .update({ payment_status: 'rejected' })
-      .eq('enrollment_id', enrollmentId);
-
-    if (error) throw error;
-    showAdminAlert(`Payment for ${enrollmentId} marked as rejected.`, 'info');
-    await loadPayments();
-    await loadDatasheet();
-  } catch (e) {
-    showAdminAlert(`Reject error: ${e.message || e}`, 'error');
-  }
-}
-window.rejectGuestPayment = rejectGuestPayment;
-
-// Load Datasheet from Supabase
-async function loadDatasheet() {
-  try {
-    const { data, error } = await supabase
-      .from('students')
-      .select('*, attendance(*)')
-      .order('registered_at', { ascending: false });
-
-    if (error) throw error;
-
-    datasheetData = (data || []).map(s => {
-      const isScanned = Array.isArray(s.attendance) ? s.attendance.length > 0 : !!s.attendance;
-      const attRecord = Array.isArray(s.attendance) ? s.attendance[0] : s.attendance;
-      return {
-        enrollment_id: s.enrollment_id,
-        name: s.name,
-        department: s.department || s.company || 'External Guest',
-        company: s.company,
-        user_type: s.user_type,
-        year: s.year || (s.user_type === 'guest' ? 'Guest' : 'N/A'),
-        phone: s.phone,
-        email: s.email,
-        amount_paid: s.amount_paid,
-        utr_number: s.utr_number,
-        payment_status: s.payment_status || 'approved',
-        registered_at: s.registered_at,
-        attendance_status: isScanned ? 'Present' : 'Not Scanned',
-        scanned_at: isScanned && attRecord ? attRecord.scanned_at : null
-      };
-    });
-
-    renderDatasheetTable();
-  } catch (err) {
-    console.error('Datasheet load error:', err);
-  }
-}
-
-// Setup Realtime Updates from Supabase
-function setupRealtimeSubscription() {
-  try {
-    if (adminRealtimeChannel && supabase) {
-      supabase.removeChannel(adminRealtimeChannel);
-      adminRealtimeChannel = null;
-    }
-    adminRealtimeChannel = supabase
-      .channel('attendance-gate-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
-        loadStats();
-        loadPayments();
-        loadDatasheet();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
-        loadStats();
-        loadPayments();
-        loadDatasheet();
-      })
-      .subscribe();
-  } catch (e) {
-    console.warn('Realtime subscription notice:', e);
-  }
-}
-
-// Filter and Render Datasheet Table
 function renderDatasheetTable() {
-  const searchTerm = (tableSearch.value || '').toLowerCase().trim();
-  const statusFilter = filterStatus.value;
-  const deptFilter = filterDept.value;
-  const yearFilter = filterYear.value;
+  const body = document.getElementById('datasheetBody');
+  if (!body) return;
+  const q = (document.getElementById('tableSearch')?.value || '').toLowerCase().trim();
+  const statusFilter = document.getElementById('filterStatus')?.value || 'ALL';
 
-  const filtered = datasheetData.filter(row => {
-    const matchSearch = !searchTerm ||
-      (row.enrollment_id && row.enrollment_id.toLowerCase().includes(searchTerm)) ||
-      (row.name && row.name.toLowerCase().includes(searchTerm)) ||
-      (row.department && row.department.toLowerCase().includes(searchTerm)) ||
-      (row.company && row.company.toLowerCase().includes(searchTerm)) ||
-      (row.utr_number && row.utr_number.toLowerCase().includes(searchTerm)) ||
-      (row.phone && row.phone.includes(searchTerm)) ||
-      (row.email && row.email.toLowerCase().includes(searchTerm));
-
-    const matchStatus = (statusFilter === 'ALL') || (row.attendance_status === statusFilter);
-    const matchDept = (deptFilter === 'ALL') || 
-      (row.department === deptFilter) ||
-      (row.department && deptFilter.includes(row.department)) ||
-      (row.department && row.department.includes(deptFilter));
-    const matchYear = (yearFilter === 'ALL') || (String(row.year) === yearFilter);
-
-    return matchSearch && matchStatus && matchDept && matchYear;
+  const filtered = eventRegistrations.filter(r => {
+    const att = r.attendees || {};
+    const isPresent = Array.isArray(r.attendance) ? r.attendance.length > 0 : !!r.attendance;
+    const attStatus = isPresent ? 'Present' : 'Not Scanned';
+    const matchQ = !q
+      || (att.name && att.name.toLowerCase().includes(q))
+      || (att.enrollment_id && att.enrollment_id.toLowerCase().includes(q))
+      || (r.attendee_email && r.attendee_email.toLowerCase().includes(q))
+      || (r.teams?.team_name && r.teams.team_name.toLowerCase().includes(q));
+    const matchS = statusFilter === 'ALL' || attStatus === statusFilter;
+    return matchQ && matchS;
   });
 
-  recordCount.textContent = filtered.length;
-
+  document.getElementById('recordCount').textContent = filtered.length;
   if (filtered.length === 0) {
-    datasheetBody.innerHTML = `
-      <tr>
-        <td colspan="10" class="text-center py-8 text-slate-500">
-          No records match the active search or filter criteria.
-        </td>
-      </tr>
-    `;
+    body.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-zinc-500">No registrations match your filter.</td></tr>';
     return;
   }
 
-  datasheetBody.innerHTML = filtered.map(row => {
-    const isPresent = row.attendance_status === 'Present';
-    const scanTimeFormatted = row.scanned_at 
-      ? new Date(row.scanned_at).toLocaleString('en-US', { hour12: true, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : '—';
-
-    let payBadge = '';
-    if (row.payment_status === 'pending_verification') {
-      payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60">₹500 Pending</span>';
-    } else if (row.amount_paid > 0) {
-      payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">₹500 Paid</span>';
-    } else {
-      payBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-900 text-zinc-400 border border-zinc-800">Free (PW)</span>';
-    }
-
-    const safeEid = escapeHtml(row.enrollment_id);
-    const safeYearLabel = row.year === 'Faculty' ? 'Faculty' : (row.year === 'Guest' ? 'Guest' : 'Yr ' + escapeHtml(row.year));
+  body.innerHTML = filtered.map(r => {
+    const att = r.attendees || {};
+    const isPresent = Array.isArray(r.attendance) ? r.attendance.length > 0 : !!r.attendance;
     return `
-      <tr class="hover:bg-zinc-900/40 transition">
-        <td class="py-2.5 px-3.5 font-mono font-medium text-zinc-200 whitespace-nowrap">${safeEid}</td>
-        <td class="py-2.5 px-3.5 font-medium text-zinc-100 whitespace-nowrap">${escapeHtml(row.name)}</td>
-        <td class="py-2.5 px-3.5 text-zinc-400">${escapeHtml(row.department)}</td>
-        <td class="py-2.5 px-3.5 text-center font-medium text-zinc-300 whitespace-nowrap">${safeYearLabel}</td>
-        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap">${escapeHtml(row.phone)}</td>
-        <td class="py-2.5 px-3.5 text-zinc-400 truncate max-w-xs" title="${escapeHtml(row.email)}">${escapeHtml(row.email)}</td>
-        <td class="py-2.5 px-3.5 whitespace-nowrap">${payBadge}</td>
-        <td class="py-2.5 px-3.5 whitespace-nowrap">
-          <span class="px-2 py-0.5 rounded text-[10px] font-medium flex items-center space-x-1.5 w-fit ${
-            isPresent 
-              ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/50' 
-              : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
-          }">
-            <i class="ph ${isPresent ? 'ph-check-circle text-emerald-400' : 'ph-clock text-zinc-500'}"></i>
-            <span>${escapeHtml(row.attendance_status)}</span>
-          </span>
-        </td>
-        <td class="py-2.5 px-3.5 font-mono text-zinc-400 whitespace-nowrap text-[11px]">${escapeHtml(scanTimeFormatted)}</td>
-        <td class="py-2.5 px-3.5 text-center whitespace-nowrap space-x-1">
-          ${!isPresent ? `
-            <button onclick="handleManualCheckIn('${safeEid}')"
-                    title="Check in attendee"
-                    class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition inline-flex items-center space-x-1 shadow-sm">
-              <i class="ph-bold ph-check text-xs"></i>
-              <span>Check In</span>
-            </button>
-          ` : `
-            <span class="text-[11px] text-emerald-400 font-medium px-2 py-0.5">Admitted</span>
-          `}
-          <button onclick="handleDeleteStudent('${safeEid}', '${encodeURIComponent(row.name || '')}')"
-                  title="Delete student record"
-                  class="px-2 py-1 rounded text-zinc-400 hover:text-rose-400 hover:bg-rose-950/30 border border-transparent hover:border-rose-900/40 text-xs transition inline-flex items-center space-x-1">
-            <i class="ph ph-trash text-xs"></i>
-            <span>Delete</span>
-          </button>
+      <tr>
+        <td class="py-2.5 px-3 font-mono text-zinc-300">${escapeHtml(att.enrollment_id)}</td>
+        <td class="py-2.5 px-3 font-medium text-zinc-100">${escapeHtml(att.name)}</td>
+        <td class="py-2.5 px-3 text-indigo-400">${r.teams ? `${escapeHtml(r.teams.team_name)} (${escapeHtml(r.teams.join_code)})` : 'Solo'}</td>
+        <td class="py-2.5 px-3 font-mono text-zinc-400">${escapeHtml(att.phone)}</td>
+        <td class="py-2.5 px-3 text-zinc-400">${escapeHtml(r.attendee_email)}</td>
+        <td class="py-2.5 px-3">${Number(r.amount_paid) > 0 ? `₹${escapeHtml(r.amount_paid)} (${escapeHtml(r.payment_status)})` : 'Free'}</td>
+        <td class="py-2.5 px-3">${isPresent ? '<span class="text-emerald-400 font-medium">Present</span>' : '<span class="text-zinc-500">Not Scanned</span>'}</td>
+        <td class="py-2.5 px-3 text-center space-x-1">
+          ${!isPresent ? `<button onclick="verifyAndMarkTicket('${escapeHtml(r.ticket_token)}')" class="px-2 py-1 rounded bg-emerald-600 text-white text-[11px]">Check In</button>` : ''}
+          <button onclick="deleteRegistration('${escapeHtml(r.id)}')" class="px-2 py-1 rounded text-rose-400 border border-rose-900/40 text-[11px]">Delete</button>
         </td>
       </tr>
     `;
   }).join('');
 }
+window.verifyAndMarkTicket = verifyAndMarkTicket;
 
-// 1-Click Check In from Datasheet (Admin Gate Override)
-async function handleManualCheckIn(enrollmentId) {
-  try {
-    showAdminAlert(`Admitting attendee ${enrollmentId}...`, 'info');
-    await verifyAndMarkTicket(enrollmentId);
-    await loadDatasheet();
-    await loadStats();
-  } catch (err) {
-    showAdminAlert(`Check-in error: ${err.message || err}`, 'error');
-  }
-}
-window.handleManualCheckIn = handleManualCheckIn;
+window.deleteRegistration = async function (regId) {
+  if (!confirm('Delete this registration?')) return;
+  const { error } = await supabase.from('registrations').delete().eq('id', regId);
+  if (error) { showAdminAlert(error.message, 'error'); return; }
+  showAdminAlert('Registration deleted.', 'info');
+  await loadActiveEventRegistrations();
+};
 
-// Delete Student (Admin Action)
-async function handleDeleteStudent(enrollmentId, encodedName) {
-  const name = decodeURIComponent(encodedName || '');
-  const confirmed = confirm(
-    `Delete attendee record?\n\n` +
-    `Name: ${name}\n` +
-    `Enrollment ID: ${enrollmentId}\n\n` +
-    `This will remove the student registration and gate scan from Supabase.`
-  );
-
-  if (!confirmed) return;
-
-  try {
-    showAdminAlert(`Deleting attendee ${enrollmentId}...`, 'info');
-
-    // 1. Delete associated attendance record first
-    const { error: attError } = await supabase
-      .from('attendance')
-      .delete()
-      .eq('enrollment_id', enrollmentId);
-
-    if (attError) console.warn('Attendance delete note:', attError);
-
-    // 2. Delete student record
-    const { error: studentError } = await supabase
-      .from('students')
-      .delete()
-      .eq('enrollment_id', enrollmentId);
-
-    if (studentError) throw studentError;
-
-    // 3. Update local state
-    datasheetData = datasheetData.filter(s => s.enrollment_id !== enrollmentId);
-    renderDatasheetTable();
-    await loadStats();
-
-    showAdminAlert(`Deleted student: ${name} (${enrollmentId})`, 'success');
-  } catch (err) {
-    console.error('Failed to delete student:', err);
-    showAdminAlert(`Delete failed: ${err.message || err}`, 'error');
-  }
+// Super Admin: Club Presidents Manager
+async function loadPresidentsList() {
+  const container = document.getElementById('presidentsList');
+  if (!container) return;
+  const { data } = await supabase.from('admin_users').select('*, clubs(name)').order('created_at', { ascending: false });
+  container.innerHTML = (data || []).map(a => `
+    <div class="p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800 flex items-center justify-between">
+      <div>
+        <p class="font-medium text-zinc-100">${escapeHtml(a.name || a.email)} <span class="text-[10px] font-mono text-indigo-400">(${escapeHtml(a.role)})</span></p>
+        <p class="text-[11px] text-zinc-500">${escapeHtml(a.email)} &bull; ${escapeHtml(a.clubs?.name || 'All Clubs')}</p>
+      </div>
+      ${a.email.toLowerCase() !== currentAdmin.email.toLowerCase()
+        ? `<button onclick="removePresident('${escapeHtml(a.email)}')" class="px-2 py-1 rounded text-rose-400 border border-rose-900/40 text-[11px]">Remove</button>`
+        : '<span class="text-[10px] text-zinc-500">You</span>'}
+    </div>
+  `).join('');
 }
 
-window.handleDeleteStudent = handleDeleteStudent;
-
-// Admin Alert helper
-function showAdminAlert(message, type = 'info') {
-  adminAlert.className = 'max-w-2xl mx-auto mt-4 px-4 py-2.5 rounded-lg text-xs flex items-start space-x-2.5 border transition-all';
-
-  let iconHtml = '<i class="ph ph-info text-sm mt-0.5 text-zinc-400"></i>';
-  if (type === 'error') {
-    adminAlert.classList.add('bg-rose-950/40', 'border-rose-900/60', 'text-rose-200');
-    iconHtml = '<i class="ph ph-warning-circle text-sm text-rose-400 mt-0.5"></i>';
-  } else if (type === 'success') {
-    adminAlert.classList.add('bg-emerald-950/40', 'border-emerald-900/60', 'text-emerald-200');
-    iconHtml = '<i class="ph ph-check-circle text-sm text-emerald-400 mt-0.5"></i>';
-  } else {
-    adminAlert.classList.add('bg-zinc-900', 'border-zinc-800', 'text-zinc-300');
-  }
-
-  adminAlert.innerHTML = `${iconHtml}<span>${message}</span>`;
-  setTimeout(() => {
-    adminAlert.classList.add('hidden');
-  }, 5000);
-}
-
-// --- Registration Controls (Live Gate Toggles) ---
-
-async function loadSystemConfig() {
-  try {
-    const { data, error } = await supabase.from('system_config').select('*');
-    if (!error && data) {
-      data.forEach(item => {
-        systemConfig[item.key] = item.value;
-      });
-    }
-    renderSystemConfigUI();
-  } catch (e) {
-    console.warn('System config load error:', e);
-  }
-}
-
-function renderSystemConfigUI() {
-  const pwBadge = document.getElementById('pwStatusBadge');
-  const pwBtn = document.getElementById('togglePwRegBtn');
-  const guestBadge = document.getElementById('guestStatusBadge');
-  const guestBtn = document.getElementById('toggleGuestRegBtn');
-
-  const isPwOpen = systemConfig.pw_registration_open !== 'false';
-  if (pwBadge) {
-    pwBadge.textContent = isPwOpen ? 'ACTIVE' : 'PAUSED';
-    pwBadge.className = isPwOpen
-      ? 'px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-      : 'px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800';
-  }
-  if (pwBtn) {
-    pwBtn.textContent = isPwOpen ? 'Stop Responses' : 'Resume Responses';
-    pwBtn.className = isPwOpen
-      ? 'px-2.5 py-1 rounded text-xs font-semibold transition bg-rose-600 hover:bg-rose-500 text-white shadow-sm'
-      : 'px-2.5 py-1 rounded text-xs font-semibold transition bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm';
-  }
-
-  const isGuestOpen = systemConfig.guest_registration_open !== 'false';
-  if (guestBadge) {
-    guestBadge.textContent = isGuestOpen ? 'ACTIVE' : 'PAUSED';
-    guestBadge.className = isGuestOpen
-      ? 'px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-      : 'px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800';
-  }
-  if (guestBtn) {
-    guestBtn.textContent = isGuestOpen ? 'Stop Responses' : 'Resume Responses';
-    guestBtn.className = isGuestOpen
-      ? 'px-2.5 py-1 rounded text-xs font-semibold transition bg-rose-600 hover:bg-rose-500 text-white shadow-sm'
-      : 'px-2.5 py-1 rounded text-xs font-semibold transition bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm';
-  }
-}
-
-async function toggleRegistrationGateway(key) {
-  const currentVal = systemConfig[key] !== 'false';
-  const newVal = currentVal ? 'false' : 'true';
-  const label = key === 'pw_registration_open' ? 'PW Community' : 'External Users';
-
-  const confirmMsg = currentVal
-    ? `Stop accepting new responses for ${label}?\n\nExisting registered attendees will still be able to access their tickets.`
-    : `Resume accepting new responses for ${label}?`;
-
-  if (!confirm(confirmMsg)) return;
-
-  try {
-    const { error } = await supabase
-      .from('system_config')
-      .upsert({ key, value: newVal, updated_at: new Date().toISOString() });
-
-    if (error) throw error;
-    systemConfig[key] = newVal;
-    renderSystemConfigUI();
-    showAdminAlert(`${label} registrations are now ${newVal === 'true' ? 'ACTIVE' : 'PAUSED'}.`, 'success');
-  } catch (e) {
-    showAdminAlert(`Failed to update setting: ${e.message || e}`, 'error');
-  }
-}
-
-// --- Manual Attendee Entry Modal Functions ---
-
-function openManualEntryModal() {
-  const modal = document.getElementById('manualEntryModal');
-  if (!modal) return;
-  document.getElementById('manualTicketToken').value = `TKT-${generateSecureHex(8)}`;
-  document.getElementById('manualEnrollmentId').value = '';
-  document.getElementById('manualName').value = '';
-  document.getElementById('manualEmail').value = '';
-  document.getElementById('manualPhone').value = '';
-  document.getElementById('manualCompany').value = '';
-  document.getElementById('manualUtr').value = '';
-
-  setManualType('pw_member');
-  modal.classList.remove('hidden');
-}
-
-function closeManualEntryModal() {
-  const modal = document.getElementById('manualEntryModal');
-  if (modal) modal.classList.add('hidden');
-}
-
-function setManualType(type) {
-  const pwRadio = document.getElementById('manualTypePw');
-  const guestRadio = document.getElementById('manualTypeGuest');
-  const pwLabel = document.getElementById('typePwLabel');
-  const guestLabel = document.getElementById('typeGuestLabel');
-  const pwFields = document.getElementById('manualPwFieldsDiv');
-  const guestFields = document.getElementById('manualGuestFieldsDiv');
-  const enrollLabel = document.getElementById('manualEnrollmentLabel');
-  const enrollInput = document.getElementById('manualEnrollmentId');
-
-  const activeClass = 'flex items-center justify-center space-x-1.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition select-none bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
-  const inactiveClass = 'flex items-center justify-center space-x-1.5 py-1.5 rounded-md text-xs font-medium cursor-pointer transition select-none text-zinc-500 hover:text-zinc-900 dark:hover:text-white';
-
-  if (type === 'pw_member') {
-    if (pwRadio) pwRadio.checked = true;
-    if (pwLabel) pwLabel.className = activeClass;
-    if (guestLabel) guestLabel.className = inactiveClass;
-    if (pwFields) pwFields.classList.remove('hidden');
-    if (guestFields) guestFields.classList.add('hidden');
-    if (enrollLabel) enrollLabel.innerHTML = 'Enrollment / Roll No <span class="text-rose-500">*</span>';
-    if (enrollInput) enrollInput.placeholder = 'e.g. 22400123';
-  } else {
-    if (guestRadio) guestRadio.checked = true;
-    if (guestLabel) guestLabel.className = activeClass;
-    if (pwLabel) pwLabel.className = inactiveClass;
-    if (pwFields) pwFields.classList.add('hidden');
-    if (guestFields) guestFields.classList.remove('hidden');
-    if (enrollLabel) enrollLabel.innerHTML = 'Guest / Ref ID <span class="text-rose-500">*</span>';
-    if (enrollInput && !enrollInput.value) {
-      enrollInput.value = 'GST-' + generateSecureHex(3);
-    }
-  }
-}
-
-async function handleManualEntrySubmit(e) {
+async function handleAddPresident(e) {
   e.preventDefault();
-  const typeRadio = document.querySelector('input[name="manualUserType"]:checked');
-  const type = typeRadio ? typeRadio.value : 'pw_member';
-  const ticketToken = document.getElementById('manualTicketToken').value.trim().toUpperCase();
-  const enrollmentId = document.getElementById('manualEnrollmentId').value.trim().toUpperCase();
-  const name = document.getElementById('manualName').value.trim();
-  const email = document.getElementById('manualEmail').value.trim().toLowerCase();
-  const phone = document.getElementById('manualPhone').value.trim();
+  const email = document.getElementById('presEmail').value.trim().toLowerCase();
+  const name = document.getElementById('presName').value.trim();
+  const role = document.getElementById('presRole').value;
+  const clubId = role === 'super_admin' ? null : Number(document.getElementById('presClubId').value);
 
-  const submitBtn = document.getElementById('saveManualEntryBtn');
-  submitBtn.disabled = true;
-  submitBtn.innerHTML = '<i class="ph-bold ph-spinner animate-spin"></i><span>Saving...</span>';
-
-  try {
-    // Check duplicate enrollment ID
-    const { data: dupId } = await supabase.from('students').select('enrollment_id').eq('enrollment_id', enrollmentId).maybeSingle();
-    if (dupId) {
-      alert(`Enrollment / Ref ID '${enrollmentId}' is already registered!`);
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = '<i class="ph-bold ph-check"></i><span>Save & Register Attendee</span>';
-      return;
-    }
-
-    // Check duplicate email
-    const { data: dupEmail } = await supabase.from('students').select('email').eq('email', email).maybeSingle();
-    if (dupEmail) {
-      alert(`Email '${email}' is already registered!`);
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = '<i class="ph-bold ph-check"></i><span>Save & Register Attendee</span>';
-      return;
-    }
-
-    let newRecord = {
-      enrollment_id: enrollmentId,
-      name,
-      email,
-      phone,
-      ticket_token: ticketToken,
-      user_type: type,
-      registered_at: new Date().toISOString()
-    };
-
-    if (type === 'pw_member') {
-      newRecord.department = document.getElementById('manualDepartment').value;
-      newRecord.year = document.getElementById('manualYear').value;
-      newRecord.amount_paid = 0;
-      newRecord.payment_status = 'approved';
-    } else {
-      newRecord.department = 'External Guest';
-      newRecord.year = 'Guest';
-      newRecord.company = document.getElementById('manualCompany').value.trim() || 'External Guest';
-      newRecord.amount_paid = 500;
-      newRecord.payment_status = document.getElementById('manualPaymentStatus').value;
-      newRecord.utr_number = document.getElementById('manualUtr').value.trim() || null;
-    }
-
-    const { error } = await supabase.from('students').insert(newRecord);
-    if (error) throw error;
-
-    showAdminAlert(`Manual attendee '${name}' (${ticketToken}) registered successfully!`, 'success');
-    closeManualEntryModal();
-    await loadStats();
-    await loadPayments();
-    await loadDatasheet();
-  } catch (err) {
-    alert(`Error registering attendee: ${err.message || err}`);
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.innerHTML = '<i class="ph-bold ph-check"></i><span>Save & Register Attendee</span>';
-  }
+  const { error } = await supabase.from('admin_users').upsert({ email, name, role, club_id: clubId });
+  if (error) { showAdminAlert(error.message, 'error'); return; }
+  document.getElementById('addPresidentForm').reset();
+  showAdminAlert(`Saved organizer access for ${email}.`, 'success');
+  await loadPresidentsList();
 }
 
-// Setup Event Listeners
+window.removePresident = async function (email) {
+  if (!confirm(`Remove organizer access for ${email}?`)) return;
+  const { error } = await supabase.from('admin_users').delete().eq('email', email);
+  if (error) { showAdminAlert(error.message, 'error'); return; }
+  await loadPresidentsList();
+};
+
+function switchTab(tab) {
+  const views = { scanner: 'scannerView', events: 'eventsView', payments: 'paymentsView', datasheet: 'datasheetView', presidents: 'presidentsView' };
+  const btns = { scanner: 'tabScannerBtn', events: 'tabEventsBtn', payments: 'tabPaymentsBtn', datasheet: 'tabDataSheetBtn', presidents: 'tabPresidentsBtn' };
+  const activeCls = 'admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm';
+  const inactiveCls = 'admin-tab-btn px-3.5 py-1.5 rounded-md text-xs font-medium transition flex items-center space-x-1.5 text-zinc-500 hover:text-zinc-200';
+
+  Object.keys(views).forEach(k => {
+    document.getElementById(views[k])?.classList.toggle('hidden', k !== tab);
+    const b = document.getElementById(btns[k]);
+    if (b) b.className = (k === tab ? activeCls : inactiveCls) + (k === 'presidents' && currentAdmin?.role !== 'super_admin' ? ' hidden' : '');
+  });
+}
+
+function setupRealtimeSubscription() {
+  if (!supabase) return;
+  if (adminRealtimeChannel) supabase.removeChannel(adminRealtimeChannel);
+  adminRealtimeChannel = supabase
+    .channel('organizer-live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations' }, () => loadActiveEventRegistrations())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => loadActiveEventRegistrations())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => loadManagedEvents())
+    .subscribe();
+}
+
+function exportCsv() {
+  if (eventRegistrations.length === 0) { showAdminAlert('No registrations to export.', 'error'); return; }
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  let csv = 'Enrollment ID,Name,Team,Join Code,Phone,Email,Amount Paid,Payment Status,Ticket Token,Attendance\n';
+  eventRegistrations.forEach(r => {
+    const att = r.attendees || {};
+    const isPresent = Array.isArray(r.attendance) ? r.attendance.length > 0 : !!r.attendance;
+    csv += [
+      esc(att.enrollment_id), esc(att.name), esc(r.teams?.team_name || 'Solo'), esc(r.teams?.join_code || ''),
+      esc(att.phone), esc(r.attendee_email), esc(r.amount_paid), esc(r.payment_status),
+      esc(r.ticket_token), esc(isPresent ? 'Present' : 'Not Scanned')
+    ].join(',') + '\n';
+  });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `event_registrations_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function setupEventListeners() {
-  if (adminGoogleSignInBtn) adminGoogleSignInBtn.addEventListener('click', signInAdminWithGoogle);
-  if (adminSwitchAccountBtn) adminSwitchAccountBtn.addEventListener('click', handleAdminLogout);
-  if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', handleAdminLogout);
+  adminGoogleSignInBtn?.addEventListener('click', signInAdminWithGoogle);
+  adminSwitchAccountBtn?.addEventListener('click', handleAdminLogout);
+  adminLogoutBtn?.addEventListener('click', handleAdminLogout);
 
-  // Response Gateways Controls
-  const togglePwBtn = document.getElementById('togglePwRegBtn');
-  if (togglePwBtn) togglePwBtn.addEventListener('click', () => toggleRegistrationGateway('pw_registration_open'));
+  activeEventSelect?.addEventListener('change', async () => {
+    activeEventId = activeEventSelect.value || null;
+    renderAdminEventsGrid();
+    await loadActiveEventRegistrations();
+  });
 
-  const toggleGuestBtn = document.getElementById('toggleGuestRegBtn');
-  if (toggleGuestBtn) toggleGuestBtn.addEventListener('click', () => toggleRegistrationGateway('guest_registration_open'));
+  document.getElementById('tabScannerBtn')?.addEventListener('click', () => switchTab('scanner'));
+  document.getElementById('tabEventsBtn')?.addEventListener('click', () => switchTab('events'));
+  document.getElementById('tabPaymentsBtn')?.addEventListener('click', () => switchTab('payments'));
+  document.getElementById('tabDataSheetBtn')?.addEventListener('click', () => switchTab('datasheet'));
+  document.getElementById('tabPresidentsBtn')?.addEventListener('click', () => switchTab('presidents'));
 
-  // Manual Attendee Entry Modal
-  const openModalBtn = document.getElementById('openManualEntryModalBtn');
-  if (openModalBtn) openModalBtn.addEventListener('click', openManualEntryModal);
+  document.getElementById('openCreateEventModalBtn')?.addEventListener('click', () => document.getElementById('createEventModal').classList.remove('hidden'));
+  document.getElementById('closeCreateEventModalBtn')?.addEventListener('click', () => document.getElementById('createEventModal').classList.add('hidden'));
+  document.getElementById('createEventForm')?.addEventListener('submit', handleCreateEvent);
+  document.getElementById('addPresidentForm')?.addEventListener('submit', handleAddPresident);
 
-  const closeModalBtn = document.getElementById('closeManualEntryModalBtn');
-  if (closeModalBtn) closeModalBtn.addEventListener('click', closeManualEntryModal);
+  document.getElementById('toggleCameraBtn')?.addEventListener('click', () => isScannerRunning ? stopCamera() : startCamera());
+  document.getElementById('manualScanForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const val = document.getElementById('manualInput').value.trim();
+    if (!val) return;
+    await verifyAndMarkTicket(val);
+    document.getElementById('manualInput').value = '';
+  });
 
-  const cancelModalBtn = document.getElementById('cancelManualEntryBtn');
-  if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeManualEntryModal);
+  document.getElementById('paymentSearch')?.addEventListener('input', renderPaymentsTable);
+  document.getElementById('filterPaymentStatus')?.addEventListener('change', renderPaymentsTable);
+  document.getElementById('tableSearch')?.addEventListener('input', renderDatasheetTable);
+  document.getElementById('filterStatus')?.addEventListener('change', renderDatasheetTable);
+  document.getElementById('refreshDataBtn')?.addEventListener('click', loadActiveEventRegistrations);
+  document.getElementById('exportCsvBtn')?.addEventListener('click', exportCsv);
+}
 
-  const manualTypePwRadio = document.getElementById('manualTypePw');
-  if (manualTypePwRadio) manualTypePwRadio.addEventListener('change', () => setManualType('pw_member'));
-
-  const manualTypeGuestRadio = document.getElementById('manualTypeGuest');
-  if (manualTypeGuestRadio) manualTypeGuestRadio.addEventListener('change', () => setManualType('guest'));
-
-  const manualEntryForm = document.getElementById('manualEntryForm');
-  if (manualEntryForm) manualEntryForm.addEventListener('submit', handleManualEntrySubmit);
-
-  if (tabScannerBtn) tabScannerBtn.addEventListener('click', () => switchTab('scanner'));
-  if (tabPaymentsBtn) tabPaymentsBtn.addEventListener('click', () => switchTab('payments'));
-  if (tabDataSheetBtn) tabDataSheetBtn.addEventListener('click', () => switchTab('datasheet'));
-
-  if (toggleCameraBtn) toggleCameraBtn.addEventListener('click', toggleCamera);
-
-  if (manualScanForm) {
-    manualScanForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const val = manualInput.value.trim();
-      if (!val) return;
-      await verifyAndMarkTicket(val);
-      manualInput.value = '';
-    });
-  }
-
-  if (refreshDataBtn) {
-    refreshDataBtn.addEventListener('click', async () => {
-      await loadStats();
-      await loadPayments();
-      await loadDatasheet();
-      showAdminAlert('Data and payment approvals refreshed from Supabase.', 'info');
-    });
-  }
-
-  if (paymentSearch) paymentSearch.addEventListener('input', renderPaymentsTable);
-  if (filterPaymentStatus) filterPaymentStatus.addEventListener('change', renderPaymentsTable);
-
-  if (tableSearch) tableSearch.addEventListener('input', renderDatasheetTable);
-  if (filterStatus) filterStatus.addEventListener('change', renderDatasheetTable);
-  if (filterDept) filterDept.addEventListener('change', renderDatasheetTable);
-  if (filterYear) filterYear.addEventListener('change', renderDatasheetTable);
-
-  // Client-side CSV Export
-  if (exportCsvBtn) {
-    exportCsvBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (!datasheetData || datasheetData.length === 0) {
-        showAdminAlert('No records to export', 'error');
-        return;
-      }
-
-      let csv = 'Enrollment/Ref ID,Name,Department/Company,Role/Year,Phone,Email,Amount Paid,UTR Number,Payment Status,Registration Date,Attendance Status,Scanned Timestamp\n';
-      datasheetData.forEach(r => {
-        const escape = (val) => `"${String(val || '').replace(/"/g, '""')}"`;
-        csv += [
-          escape(r.enrollment_id),
-          escape(r.name),
-          escape(r.department),
-          escape(r.year),
-          escape(r.phone),
-          escape(r.email),
-          escape(r.amount_paid || 0),
-          escape(r.utr_number || 'N/A'),
-          escape(r.payment_status || 'approved'),
-          escape(r.registered_at),
-          escape(r.attendance_status),
-          escape(r.scanned_at || 'N/A')
-        ].join(',') + '\n';
-      });
-
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `supabase_attendance_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    });
-  }
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { setupEventListeners(); checkAdminSession(); });
+} else {
+  setupEventListeners();
+  checkAdminSession();
 }
